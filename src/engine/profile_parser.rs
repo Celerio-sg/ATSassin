@@ -429,8 +429,7 @@ impl ProfileParser {
                             skills_used: Vec::new(),
                         });
                     } else if lines.len() == 1 {
-                        let parts: Vec<&str> =
-                            lines[0].splitn(3, ['-', '|']).collect();
+                        let parts: Vec<&str> = lines[0].splitn(3, ['-', '|']).collect();
                         if parts.len() >= 2 {
                             experiences.push(Experience {
                                 id: uuid::Uuid::new_v4().to_string(),

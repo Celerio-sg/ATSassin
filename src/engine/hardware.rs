@@ -107,10 +107,9 @@ impl HardwareProfile {
     pub fn tier_for_hardware(&self, tier: &ModelTier) -> ModelTier {
         let mut adjusted = tier.clone();
 
-        if !self.has_gpu && tier.cpu_ok
-            && tier.quantization == "Q6_K" {
-                adjusted.quantization = "Q4_K_M".to_string();
-            }
+        if !self.has_gpu && tier.cpu_ok && tier.quantization == "Q6_K" {
+            adjusted.quantization = "Q4_K_M".to_string();
+        }
 
         if self.total_ram_gb < tier.ram_min_gb {
             adjusted.context_tokens = adjusted.context_tokens.min(4096);

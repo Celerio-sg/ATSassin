@@ -160,9 +160,10 @@ impl Scorer {
         let title = job.title.to_lowercase();
 
         if (desc.contains("ai transformation") || desc.contains("ai-driven transformation"))
-            && (desc.contains("legacy") || desc.contains("mainframe") || desc.contains("on-prem")) {
-                flags.push("AI-buzzword vs infrastructure mismatch: buzzword-heavy description for legacy-heavy role".to_string());
-            }
+            && (desc.contains("legacy") || desc.contains("mainframe") || desc.contains("on-prem"))
+        {
+            flags.push("AI-buzzword vs infrastructure mismatch: buzzword-heavy description for legacy-heavy role".to_string());
+        }
 
         let buzzword_count = [
             "synergy",

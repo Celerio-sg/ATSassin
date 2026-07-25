@@ -834,14 +834,11 @@ impl Scraper {
 
         let mut caps = fantoccini::wd::Capabilities::new();
         caps.insert("browserName".to_string(), "chrome".into());
-        caps.insert(
-            "goog:chromeOptions".to_string(),
-            {
-                let mut opts = serde_json::json!({});
-                opts["args"] = serde_json::json!(["--headless", "--disable-gpu", "--no-sandbox"]);
-                opts
-            },
-        );
+        caps.insert("goog:chromeOptions".to_string(), {
+            let mut opts = serde_json::json!({});
+            opts["args"] = serde_json::json!(["--headless", "--disable-gpu", "--no-sandbox"]);
+            opts
+        });
 
         #[allow(deprecated)]
         let client = Client::new("http://localhost:4444").await?;

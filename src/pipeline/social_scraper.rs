@@ -219,7 +219,9 @@ impl SocialScraper {
                     format!("https://www.reddit.com{}", permalink)
                 };
 
-                let created_at = post["created_utc"].as_f64().map(|ts| DateTime::from_timestamp(ts as i64, 0).unwrap_or_else(Utc::now));
+                let created_at = post["created_utc"]
+                    .as_f64()
+                    .map(|ts| DateTime::from_timestamp(ts as i64, 0).unwrap_or_else(Utc::now));
 
                 jobs.push(SocialJobLead {
                     title,
@@ -325,9 +327,11 @@ impl SocialScraper {
     }
 
     async fn scrape_twitter(&self, query: &str, limit: usize) -> Result<Vec<SocialJobLead>> {
-        let nitter_instances = ["https://nitter.net",
+        let nitter_instances = [
+            "https://nitter.net",
             "https://nitter.privacydev.net",
-            "https://nitter.poast.org"];
+            "https://nitter.poast.org",
+        ];
 
         let mut jobs = Vec::new();
         for instance in nitter_instances.iter().take(2) {
@@ -590,7 +594,8 @@ impl SocialScraper {
     }
 
     async fn scrape_telegram(&self, query: &str, limit: usize) -> Result<Vec<SocialJobLead>> {
-        let telegram_rss_urls = [format!(
+        let telegram_rss_urls = [
+            format!(
                 "https://rss.app/feeds/v1.1/telegram/channel/{}?query={}",
                 urlencoding::encode("remotejobs"),
                 urlencoding::encode(query)
@@ -599,7 +604,8 @@ impl SocialScraper {
                 "https://rss.app/feeds/v1.1/telegram/channel/{}?query={}",
                 urlencoding::encode("job notifications"),
                 urlencoding::encode(query)
-            )];
+            ),
+        ];
 
         let mut jobs = Vec::new();
         for rss_url in telegram_rss_urls.iter().take(2) {
@@ -638,14 +644,16 @@ impl SocialScraper {
     }
 
     async fn scrape_discord(&self, query: &str, limit: usize) -> Result<Vec<SocialJobLead>> {
-        let discord_search_urls = [format!(
+        let discord_search_urls = [
+            format!(
                 "https://discord.com/search?q={}",
                 urlencoding::encode(query)
             ),
             format!(
                 "https://discordapp.com/search?q={}",
                 urlencoding::encode(query)
-            )];
+            ),
+        ];
 
         let mut jobs = Vec::new();
         for url in discord_search_urls.iter().take(1) {
