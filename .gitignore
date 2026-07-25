@@ -1,4 +1,6 @@
 /target
+__pycache__/
+*.pyc
 .atsassin.db
 *.sqlite
 *.db
@@ -18,3 +20,9 @@ session-ses_*.md
 # Competitor clones pulled in for benchmarking (see docs/COMPETITIVE_BENCHMARK_2026-07-25.md) -
 # other projects' full source trees, not part of ATSassin itself
 /benchmarks/
+
+# Real personal LinkedIn export used as a local test fixture - contains real
+# names/emails/phone numbers (the account owner's and their connections').
+# Never commit this. If an example LinkedIn-export fixture is needed for
+# docs/tests, it must be synthetic/anonymized data checked in deliberately.
+/assets/examples/
