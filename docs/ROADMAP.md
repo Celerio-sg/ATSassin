@@ -1,6 +1,8 @@
 # Roadmap, Known Issues & Ethical Considerations
 
 > **Ground truth for contributors:** the two most reliable documents in this repo are [UAT_REPORT_2026-07-24.md](UAT_REPORT_2026-07-24.md) (issues found and fixed via real end-to-end testing across 5 personas) and [COMPETITIVE_BENCHMARK_2026-07-25.md](COMPETITIVE_BENCHMARK_2026-07-25.md) (ATSassin actually run head-to-head against 7 competitor tools). Where this roadmap and older planning docs (`COMPARISON.md`, `EXECUTIVE_SUMMARY.md`, `RANKING.md`, `COMPLIANCE_MATRIX.md`) disagree, trust the UAT/benchmark reports — they reflect what was actually run and observed, not what was planned or claimed.
+>
+> **For the structural plan behind staying ahead** (not just the list of open items below), see [CATEGORY_LEADERSHIP_ROADMAP.md](CATEGORY_LEADERSHIP_ROADMAP.md) — a red-team pass on where today's competitive position is fragile (undocumented API drift, a one-time benchmark snapshot, docs already drifting from shipped features) and what closes each gap structurally.
 
 ## What's real today (verified by actual execution, not just present in the code)
 
