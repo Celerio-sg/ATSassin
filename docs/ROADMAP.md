@@ -14,18 +14,17 @@
 
 These are real, currently-open items, not resolved yet:
 
-1. **Scan board coverage is still narrow relative to the job market as a whole.** The `companies` directory currently lists ~35 companies (skewed toward AI-native firms, inherited from the initial seed list). Indeed and Glassdoor remain bot-protected and unreliable. **Good first issue**: extend `src/pipeline/company_directory.rs` with more companies across more industries (it's a flat, append-only list — no architecture change needed).
+1. **The curated company-to-board directory (`src/pipeline/company_directory.rs`) is a maintenance liability, not just incomplete.** It's currently a flat, hand-maintained list of ~35 company/slug pairs. Even fully filled out, which company sits on which ATS (Greenhouse/Lever/Ashby/Workable) changes constantly as companies migrate providers, so a static list goes stale within months regardless of how many entries it has. **Better direction (raised in community review):** derive the directory instead of maintaining it — fetch a company's public careers page and pattern-match the embedded board URL (Greenhouse/Lever/Ashby/Workable each have a recognizable embed/redirect shape) to detect which provider and slug they use. This turns "add more companies" from a permanent, weekly-recurring chore into a one-time detector. **Good first issue** in the meantime: adding more company/slug pairs to the existing list is still useful and needs no architecture change — just lower-leverage than the detector.
 2. **`--preset` (lightweight/balanced/full) has no effect on model choice when using a hosted cloud provider** — it only changes timeout/retry/scrape-limit values. The hardware-adaptive tiering system only differentiates behavior when running against local Ollama. This should either be documented more prominently or extended so cloud presets pick different model *sizes* per tier (e.g. a cheaper/faster Groq model for `lightweight`).
 3. **Compensation estimates are model-generated and can still be wrong even after the seniority-aware sanity clamp** added in this pass (see `role_inference.rs`) — treat `market rates`/inferred compensation bands as a rough guide, not authoritative data. A real market-data source (even a periodically-updated static dataset) would be a meaningful accuracy improvement over pure LLM estimation.
 4. **No genuine low-spec/CPU-only hardware was used to validate the "works on any hardware" claim** — testing so far has been on capable development hardware. Needs validation on an actual 4GB-RAM/CPU-only machine.
-5. **Region filter in the TUI (`g` to cycle) is a simple query-suffix, not a real geographic filter** — it appends "North America"/"Europe"/"APAC" to the search query rather than filtering by parsed job location. A proper location-aware filter (parsing each posting's location field, not just hoping the search API respects a region keyword) would be more reliable.
-6. **Lightning AI provider integration returns 401 Unauthorized** in every test so far — unconfirmed whether this is a request/auth-format bug in `src/engine/llm.rs` or an environment credential issue. Needs investigation with known-good Lightning credentials.
+5. **Lightning AI provider integration returns 401 Unauthorized** in every test so far — unconfirmed whether this is a request/auth-format bug in `src/engine/llm.rs` or an environment credential issue. Needs investigation with known-good Lightning credentials.
+6. **The concurrent company-directory sweep (`scrape_companies`) caps in-flight requests per host (fixed — see `src/pipeline/scraper.rs`), but nothing else in the scraper does.** If board coverage grows to fan out across multiple hosts at once (e.g. sweeping Lever and Ashby company lists concurrently, not just Greenhouse), each host needs its own concurrency cap, not one global one — a shared global limit still lets one slow/rate-limiting host starve the others. Worth revisiting once a second concurrent multi-company sweep is added.
 
 ## Roadmap
 
 ### Now
-- Expand the zero-token company directory (see gap #1 above) — this is the highest-leverage, lowest-risk contribution available right now.
-- Location-aware region filtering (gap #5).
+- Company-directory-as-detector (see gap #1 above) — replaces a permanently-stale hand-maintained list with something derived from each company's own careers page.
 - Cloud-provider model tiering for `--preset` (gap #2).
 
 ### Next — Career Coaching (flagship feature request)

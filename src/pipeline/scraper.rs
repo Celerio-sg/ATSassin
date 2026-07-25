@@ -479,6 +479,17 @@ impl Scraper {
         let Some(jobs_arr) = data["jobs"].as_array() else {
             return Ok(vec![]);
         };
+        if jobs_arr.is_empty() {
+            // Distinct from "no postings matched the query" - a 200 with a
+            // genuinely empty jobs array can also mean the board was
+            // rate-limited and handed back an empty body instead of a 429.
+            // Worth knowing which one happened when debugging a sweep that
+            // came back thinner than expected.
+            debug!(
+                "Greenhouse board '{}' returned HTTP 200 with zero total postings (rate-limited, or a genuinely empty board)",
+                company
+            );
+        }
 
         let query_lower = query.to_lowercase();
         let match_all = query_lower.is_empty() || query_lower == "general";
@@ -687,12 +698,24 @@ impl Scraper {
         use crate::pipeline::company_directory::GREENHOUSE_COMPANIES;
         let start = std::time::Instant::now();
 
+        // Every one of these companies is hosted on the same
+        // boards-api.greenhouse.io host, so firing all ~36 requests at once
+        // (as this used to do) hammers a single host rather than spreading
+        // load - real job boards rate-limit quickly, and several answer an
+        // over-limit request with a 200 and an empty body instead of a 429,
+        // which reads as "zero jobs" rather than "throttled". Capping
+        // in-flight requests to this host keeps the sweep polite and keeps
+        // empty results honest.
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
+
         let mut handles = Vec::with_capacity(GREENHOUSE_COMPANIES.len());
         for (_name, slug) in GREENHOUSE_COMPANIES {
             let scraper = self.clone();
             let slug = slug.to_string();
             let query = query.to_string();
+            let semaphore = semaphore.clone();
             handles.push(tokio::spawn(async move {
+                let _permit = semaphore.acquire_owned().await;
                 scraper
                     .scrape_greenhouse(&slug, &query, limit)
                     .await
