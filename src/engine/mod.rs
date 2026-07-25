@@ -4,6 +4,7 @@ pub mod deep_research;
 pub mod distillation;
 pub mod feedback;
 pub mod hardware;
+pub mod landscore;
 pub mod llm;
 pub mod matcher;
 pub mod preferences;

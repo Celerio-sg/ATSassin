@@ -34,6 +34,17 @@ pub enum Commands {
     Feedback(FeedbackArgs),
     Market(MarketArgs),
     Preferences(PreferencesArgs),
+    Recommend(RecommendArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct RecommendArgs {
+    /// How many ranked jobs to show
+    #[arg(short, long, default_value = "15")]
+    pub limit: usize,
+    /// How many persisted jobs to consider (across all past scans)
+    #[arg(long, default_value = "500")]
+    pub pool: usize,
 }
 
 #[derive(Args, Debug)]
@@ -288,6 +299,7 @@ impl Cli {
             Commands::Feedback(args) => self.handle_feedback(args).await,
             Commands::Market(args) => self.handle_market(args).await,
             Commands::Preferences(args) => self.handle_preferences(args).await,
+            Commands::Recommend(args) => self.handle_recommend(args).await,
         }
     }
 
@@ -834,6 +846,109 @@ impl Cli {
             }
         }
 
+        Ok(())
+    }
+
+    /// Ranks every job scraped so far (across all past `scan` runs, not just
+    /// the last one) by how likely it is to land quickly - see
+    /// `engine::landscore` for the composite formula and its rationale.
+    pub async fn handle_recommend(&self, args: &RecommendArgs) -> Result<()> {
+        let cfg = self.load_config()?;
+        let tracker = crate::pipeline::tracker::PipelineTracker::new(&cfg.database_path)?;
+        let rows = tracker.list_job_rows(args.pool)?;
+        if rows.is_empty() {
+            println!("No jobs scraped yet. Run `atsassin scan --role \"<role>\" --location \"<location>\"` first.");
+            return Ok(());
+        }
+
+        let profile = if cfg.profile_path.exists() {
+            ProfileParser::parse(ProfileInput::Markdown {
+                path: cfg.profile_path.clone(),
+            })
+            .ok()
+        } else {
+            None
+        };
+
+        // One batch prerank pass over every pooled job so the lexical IDF
+        // weighting is computed against a real, large corpus - the same
+        // reason `scan` ranks its whole batch at once rather than job by job.
+        let relevance: Vec<f64> = if let Some(profile) = &profile {
+            let ranked = crate::engine::prerank::rank(profile, &rows, |r| {
+                format!("{} {}", r.title, r.description)
+            });
+            let mut by_index = vec![0.0; rows.len()];
+            for (idx, score) in ranked {
+                by_index[idx] = score;
+            }
+            by_index
+        } else {
+            vec![0.0; rows.len()]
+        };
+
+        let now = chrono::Utc::now();
+        let mut scored: Vec<(
+            f64,
+            crate::engine::landscore::LandScore,
+            &crate::models::job::JobRow,
+        )> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let pref_match = crate::engine::preferences::check(row, &cfg.preferences);
+                // overall_score is stored on a 0..1 scale (see Evaluation).
+                let eval_score = row.overall_score;
+                let text = format!("{} {}", row.title, row.description);
+                let ls = crate::engine::landscore::score(
+                    relevance[i],
+                    &pref_match,
+                    eval_score,
+                    row.posted_at,
+                    now,
+                    &text,
+                );
+                (ls.composite, ls, row)
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        if profile.is_none() {
+            println!("(No profile found - ranking on preferences/recency/contract-signal only, not fit. Run `atsassin profile init` for full ranking.)\n");
+        }
+        println!(
+            "=== Top {} jobs most likely to land quickly ===\n",
+            args.limit.min(scored.len())
+        );
+        for (composite, ls, row) in scored.iter().take(args.limit) {
+            let fit_label = match ls.eval_score_pct {
+                Some(pct) => format!("LLM-scored fit {pct:.0}%"),
+                None => format!("lexical fit {:.0}%", ls.relevance_pct),
+            };
+            let recency_label = match ls.posted_days_ago {
+                Some(0) => "posted today".to_string(),
+                Some(d) => format!("posted {d}d ago"),
+                None => "posted date unknown".to_string(),
+            };
+            println!(
+                "  {composite:.0}  {} at {} ({})",
+                row.title, row.company, row.location
+            );
+            println!(
+                "       {fit_label} | {recency_label}{}{}",
+                if ls.contract_signal {
+                    " | contract/interim/fractional language"
+                } else {
+                    ""
+                },
+                if !ls.pref_match {
+                    format!(" | prefs: {}", ls.pref_reasons.join("; "))
+                } else {
+                    String::new()
+                }
+            );
+            println!("       id: {}", row.id);
+        }
+        println!("\nRun `atsassin evaluate --job-id <id>` on unscored ones to sharpen this ranking with a real LLM score.");
         Ok(())
     }
 

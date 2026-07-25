@@ -94,6 +94,8 @@ pub struct JobRow {
     pub overall_score: Option<f64>,
     pub overall_grade: Option<String>,
     pub status: Option<PipelineStatus>,
+    pub posted_at: Option<DateTime<Utc>>,
+    pub scraped_at: DateTime<Utc>,
 }
 
 /// A real, derived timeline event - never fabricated. Built by merging

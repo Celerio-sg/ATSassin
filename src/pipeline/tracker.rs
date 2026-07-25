@@ -360,7 +360,7 @@ impl PipelineTracker {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT j.id, j.title, j.company, j.location, j.url, j.description, j.salary_range, j.remote,
-                    e.overall_score, e.overall_grade, p.status
+                    e.overall_score, e.overall_grade, p.status, j.posted_at, j.scraped_at
              FROM jobs j
              LEFT JOIN evaluations e ON e.id = (
                  SELECT id FROM evaluations WHERE job_id = j.id ORDER BY evaluated_at DESC LIMIT 1
@@ -377,6 +377,16 @@ impl PipelineTracker {
         while let Some(row) = rows.next()? {
             let status_str: Option<String> = row.get(10)?;
             let status = status_str.and_then(|s| serde_json::from_str(&s).ok());
+            let posted_at = row.get::<_, Option<String>>(11)?.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+            let scraped_at = row
+                .get::<_, String>(12)
+                .ok()
+                .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                .unwrap_or_else(Utc::now);
             out.push(JobRow {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -389,6 +399,8 @@ impl PipelineTracker {
                 overall_score: row.get(8)?,
                 overall_grade: row.get(9)?,
                 status,
+                posted_at,
+                scraped_at,
             });
         }
         Ok(out)
