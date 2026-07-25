@@ -199,12 +199,12 @@ impl HardwareProfile {
             if std::path::Path::new("/dev/dri").exists() {
                 return (true, Some(8));
             }
-            return (false, None);
+            (false, None)
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
         {
-            return (false, None);
+            (false, None)
         }
     }
 }
