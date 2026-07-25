@@ -44,17 +44,42 @@ impl Scraper {
         query: &str,
         limit: usize,
     ) -> Result<ScrapeResult> {
-        debug!("Scraping board: {} for query: {}", board, query);
+        self.scrape_board_at(board, query, limit, None).await
+    }
+
+    /// Same as `scrape_board`, with an optional target location. Without
+    /// this, LinkedIn's guest API silently defaults to a location it
+    /// infers server-side - confirmed via real-world testing to
+    /// consistently return US postings regardless of query wording, which
+    /// is a real bug (not a "try different search terms" problem) for
+    /// anyone searching outside the US.
+    pub async fn scrape_board_at(
+        &self,
+        board: &str,
+        query: &str,
+        limit: usize,
+        location: Option<&str>,
+    ) -> Result<ScrapeResult> {
+        debug!(
+            "Scraping board: {} for query: {} location: {:?}",
+            board, query, location
+        );
         let mut jobs = match board {
-            "linkedin" => self.scrape_linkedin(query, limit).await.unwrap_or_default(),
+            "linkedin" => self
+                .scrape_linkedin(query, limit, location)
+                .await
+                .unwrap_or_default(),
             "seek" => self.scrape_seek(query, limit).await.unwrap_or_default(),
             "indeed" => self.scrape_indeed(query, limit).await.unwrap_or_default(),
             "glassdoor" => self
                 .scrape_glassdoor(query, limit)
                 .await
                 .unwrap_or_default(),
+            // Maps to the "who is hiring" thread search, not generic HN story
+            // search - the latter returned irrelevant front-page stories
+            // (e.g. "Show HN: ..." posts) instead of job postings.
             "hackernews" => self
-                .scrape_social_platform(query, limit, "HackerNews")
+                .scrape_social_platform(query, limit, "HN_WhoIsHiring")
                 .await
                 .unwrap_or_default(),
             "reddit" => self
@@ -166,16 +191,24 @@ impl Scraper {
     /// LinkedIn's public "guest" job-search API - no authentication required.
     /// Undocumented and can change without notice; any parse failure degrades
     /// to an empty result rather than fabricating data.
-    async fn scrape_linkedin(&self, query: &str, limit: usize) -> Result<Vec<JobSummary>> {
+    async fn scrape_linkedin(
+        &self,
+        query: &str,
+        limit: usize,
+        location: Option<&str>,
+    ) -> Result<Vec<JobSummary>> {
         let client = reqwest::Client::builder()
             .user_agent(BROWSER_USER_AGENT)
             .timeout(std::time::Duration::from_secs(10))
             .build()?;
 
-        let search_url = format!(
+        let mut search_url = format!(
             "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={}&start=0",
             urlencoding::encode(query)
         );
+        if let Some(loc) = location.filter(|l| !l.trim().is_empty()) {
+            search_url.push_str(&format!("&location={}", urlencoding::encode(loc)));
+        }
 
         let resp = client.get(&search_url).send().await?;
         if !resp.status().is_success() {

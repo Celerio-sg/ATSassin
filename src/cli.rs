@@ -92,6 +92,13 @@ pub struct ScanArgs {
     /// Only show/save jobs matching your saved preferences (`atsassin preferences set`)
     #[arg(long)]
     pub prefs_only: bool,
+    /// Target location (e.g. "Singapore", "United Kingdom", "Worldwide").
+    /// Without this, LinkedIn's guest API silently defaults to whatever
+    /// location it infers server-side (found via real-world testing:
+    /// consistently US postings regardless of query text) - this was a
+    /// real gap, not a query-wording problem.
+    #[arg(short = 'L', long)]
+    pub location: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -400,7 +407,9 @@ impl Cli {
 
         for board in boards {
             info!("Scanning {} for role: {}", board, query);
-            let result = scraper.scrape_board(&board, &query, args.limit).await?;
+            let result = scraper
+                .scrape_board_at(&board, &query, args.limit, args.location.as_deref())
+                .await?;
             println!("[{}] Found {} jobs", board, result.jobs.len());
             for summary in result.jobs.iter().take(args.limit) {
                 if summary.url.is_empty() {

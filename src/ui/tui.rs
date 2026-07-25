@@ -548,10 +548,15 @@ impl TuiDashboard {
             }
         };
         let region = REGIONS[self.region_idx];
-        let query = if region == "Global" {
-            base_query
+        let query = base_query;
+        // Passed as a real `location` param to the scraper rather than
+        // appended to the query text - LinkedIn's guest API ignores region
+        // words embedded in `keywords` and silently falls back to a
+        // US-biased default location unless `location` is set explicitly.
+        let location: Option<String> = if region == "Global" {
+            None
         } else {
-            format!("{base_query} {region}")
+            Some(region.to_string())
         };
 
         self.scanning = true;
@@ -559,6 +564,9 @@ impl TuiDashboard {
         self.scan_boards_done = 0;
         self.scan_found_total = 0;
         self.scan_log.push(format!("Query: \"{query}\""));
+        if let Some(loc) = &location {
+            self.scan_log.push(format!("Location: {loc}"));
+        }
 
         let boards = self.cfg.boards.clone();
         self.scan_boards_total = boards.len();
@@ -581,7 +589,10 @@ impl TuiDashboard {
 
             for board in boards {
                 let _ = tx.send(TuiEvent::ScanBoardStarted(board.clone()));
-                let result = match scraper.scrape_board(&board, &query, limit).await {
+                let result = match scraper
+                    .scrape_board_at(&board, &query, limit, location.as_deref())
+                    .await
+                {
                     Ok(r) => r,
                     Err(e) => {
                         let _ = tx.send(TuiEvent::ScanError(format!("{board}: {e}")));

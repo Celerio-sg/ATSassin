@@ -46,8 +46,7 @@ impl SocialScraper {
         debug!("Scraping social platforms for query: {}", query);
         let mut leads = Vec::new();
 
-        let scrapers: [&str; 11] = [
-            "HackerNews",
+        let scrapers: [&str; 10] = [
             "Reddit",
             "LinkedIn",
             "Twitter",
@@ -62,7 +61,6 @@ impl SocialScraper {
 
         for name in scrapers.iter() {
             let jobs = match *name {
-                "HackerNews" => self.scrape_hackernews(query, limit).await,
                 "Reddit" => self.scrape_reddit(query, limit).await,
                 "LinkedIn" => self.scrape_linkedin(query, limit).await,
                 "Twitter" => self.scrape_twitter(query, limit).await,
@@ -98,47 +96,6 @@ impl SocialScraper {
             let key = (lead.url.clone(), lead.title.clone());
             seen.insert(key)
         });
-    }
-
-    async fn scrape_hackernews(&self, query: &str, limit: usize) -> Result<Vec<SocialJobLead>> {
-        let search_url = format!(
-            "https://hn.algolia.com/api/v1/search?query={}&tags=story&hitsPerPage={}",
-            urlencoding::encode(query),
-            limit
-        );
-
-        let resp = self.client.get(&search_url).send().await?;
-        let data: serde_json::Value = resp.json().await?;
-
-        let mut jobs = Vec::new();
-        if let Some(hits) = data["hits"].as_array() {
-            for hit in hits.iter().take(limit) {
-                let title = hit["title"].as_str().unwrap_or("").trim().to_string();
-                if title.is_empty() {
-                    continue;
-                }
-
-                let url = hit["url"].as_str().unwrap_or(&search_url).to_string();
-                let created_at = hit["created_at"].as_str().and_then(|s| {
-                    chrono::DateTime::parse_from_rfc3339(s)
-                        .ok()
-                        .map(|dt| dt.with_timezone(&Utc))
-                });
-
-                jobs.push(SocialJobLead {
-                    title,
-                    company: "HackerNews".to_string(),
-                    location: "Remote".to_string(),
-                    url,
-                    source_platform: "HackerNews".to_string(),
-                    author: hit["author"].as_str().unwrap_or("unknown").to_string(),
-                    posted_at: created_at,
-                    snippet: "Posted on HackerNews".to_string(),
-                });
-            }
-        }
-
-        Ok(jobs)
     }
 
     async fn scrape_hn_who_is_hiring(
