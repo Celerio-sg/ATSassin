@@ -1,0 +1,17 @@
+Name: Rachel Torres
+Headline: Former Marketing Coordinator | Full-time Worldschooling Parent | Freelance Content Creator
+Summary: I'm a 42-year-old mother of two (ages 8 and 11) who left a marketing coordinator position six years ago to worldschool our children full-time. We've lived and learned in 14 countries across Southeast Asia, Central America, and Europe. Before our worldschooling journey, I spent 7 years in marketing roles — 4 years as a Marketing Coordinator at a mid-sized SaaS company and 3 years as a Junior Copywriter at a digital agency. I've maintained freelance work throughout our travels: writing blog content for travel brands, managing social media accounts for two small businesses, and developing homeschool curriculum guides that I sell on Teachers Pay Teachers (600+ sales). I'm now looking for part-time remote work (15-25 hours/week) that fits around our travel schedule and the kids' learning. My strongest areas are content creation, social media management, virtual assistance, and educational content design. I'm comfortable with irregular hours across time zones and work well independently. Tech stack: Google Workspace, Canva Pro, Buffer, Mailchimp, WordPress, Teachable, basic video editing (CapCut), Google Analytics.
+
+Experience: Marketing Coordinator at CloudSync Solutions (Jan 2014 - Dec 2017)
+- Coordinated product launch campaigns across email, social, and paid channels. - Managed editorial calendar and published 3-4 blog posts per week. - Created sales collateral (one-pagers, case studies, pitch decks) for the sales team. - Analysed campaign performance using Google Analytics and HubSpot. - Grew company LinkedIn following from 800 to 4,200 in 18 months.
+
+Experience: Junior Copywriter at Pixel & Ink Digital Agency (Jun 2011 - Dec 2013)
+- Wrote web copy, email campaigns, and social media content for 8-10 clients simultaneously. - Collaborated with designers and developers on website redesign projects. - Conducted keyword research and implemented basic SEO best practices. - Won agency's "Best Campaign Copy" award in 2013.
+
+Experience: Freelance Content Creator & Virtual Assistant (Jan 2018 - Present)
+- Write blog content for 3 travel and lifestyle brands (2-4 articles/month each). - Manage Instagram and Pinterest accounts for 2 small e-commerce businesses. - Created and sell homeschool curriculum guides on Teachers Pay Teachers (600+ lifetime sales, 4.8/5 rating). - Developed a worldschooling resource blog with 5,000+ monthly visitors. - Provided ad-hoc virtual assistance (email management, research, scheduling) for a US-based entrepreneur.
+
+Experience: Worldschooling Parent & Educator (Jan 2018 - Present)
+- Designed and delivered personalised curricula for two children across 14 countries. - Integrated local culture, history, and geography into daily learning. - Coordinated with online tutors and worldschooling co-ops for specialised subjects. - Managed family travel logistics across multiple continents and time zones.
+
+Skills: Content Writing, Copywriting, Blog Management, Social Media Management, Email Marketing, SEO Basics, Campaign Analytics, Google Analytics, HubSpot, Canva Pro, Buffer, Mailchimp, WordPress, Teachable, CapCut Video Editing, Curriculum Design, Educational Content Development, Virtual Assistance, Project Coordination, Google Workspace, Time Management, Cross-cultural Communication, Self-directed Learning, Remote Collaboration

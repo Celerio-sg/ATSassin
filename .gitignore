@@ -6,10 +6,15 @@ __pycache__/
 *.db
 .env
 .env.local
-config.toml
-profile.md
-*.pdf
-*.docx
+# Root-anchored (leading /): these are locally-generated runtime artifacts
+# at the project root, not a ban on the filename/extension anywhere in the
+# repo - a bare pattern here previously and silently excluded the real
+# `tests/uat/*/profile.md` fixtures the test suite depends on, since
+# unanchored gitignore patterns match at any depth.
+/config.toml
+/profile.md
+/*.pdf
+/*.docx
 .DS_Store
 Thumbs.db
 
