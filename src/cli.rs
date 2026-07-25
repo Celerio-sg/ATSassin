@@ -166,6 +166,12 @@ pub enum PipelineAction {
         #[arg(short, long)]
         output: PathBuf,
     },
+    /// Shows the job you applied to and the resume/cover letter you actually
+    /// submitted for it - so you're never guessing ahead of an interview.
+    Show {
+        #[arg(short, long)]
+        job_id: String,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -720,6 +726,16 @@ impl Cli {
         println!("=== Tailored Resume ===\n{}", resume);
         println!("\n=== Cover Letter ===\n{}", cover);
 
+        // Persisted so that months later - e.g. ahead of an interview - it's
+        // possible to see exactly what was submitted and for which job, even
+        // if the original posting has since been taken down or edited.
+        let model_used = format!("{:?}/{}", cfg.llm.provider, self.preset);
+        tracker.record_application(&job.id, &resume, &cover, &model_used)?;
+        println!(
+            "\nSaved to your application record for '{} at {}' (job id: {}). Run `atsassin pipeline show --job-id {}` any time to see it again.",
+            job.title, job.company, job.id, job.id
+        );
+
         if let Some(output) = &args.output {
             crate::ui::output::OutputEngine::export_markdown(
                 &format!("{}\n\n{}", resume, cover),
@@ -843,6 +859,44 @@ impl Cli {
                 }
                 wtr.flush()?;
                 println!("Exported {} entries to {}", entries.len(), output.display());
+            }
+            PipelineAction::Show { job_id } => {
+                let job = tracker
+                    .get_job(job_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Job '{}' not found in database.", job_id))?;
+                println!("=== {} at {} ===", job.title, job.company);
+                println!("Location: {}", job.location);
+                println!("URL: {}", job.url);
+                println!("Job ID: {}\n", job.id);
+
+                let status = tracker
+                    .list_pipeline()?
+                    .into_iter()
+                    .find(|e| &e.job_id == job_id)
+                    .map(|e| format!("{:?}", e.status));
+                println!(
+                    "Pipeline status: {}",
+                    status.unwrap_or_else(|| "(not in pipeline)".to_string())
+                );
+
+                println!(
+                    "\n--- Job description (as scraped) ---\n{}",
+                    job.description
+                );
+
+                match tracker.get_latest_application(job_id)? {
+                    Some(app) => {
+                        println!(
+                            "\n--- What you submitted (generated {}) ---",
+                            app.generated_at.to_rfc3339()
+                        );
+                        println!("\n=== Resume ===\n{}", app.resume_text);
+                        println!("\n=== Cover Letter ===\n{}", app.cover_letter_text);
+                    }
+                    None => {
+                        println!("\nNo tailored application on file for this job yet - run `atsassin tailor --job-id {}` to generate and save one.", job_id);
+                    }
+                }
             }
         }
 

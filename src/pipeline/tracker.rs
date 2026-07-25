@@ -101,6 +101,15 @@ impl PipelineTracker {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS applications (
+                id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                resume_text TEXT NOT NULL,
+                cover_letter_text TEXT NOT NULL,
+                model_used TEXT NOT NULL,
+                generated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_applications_job_id ON applications(job_id);
             CREATE TABLE IF NOT EXISTS market_data (
                 id TEXT PRIMARY KEY,
                 role_id TEXT NOT NULL,
@@ -281,6 +290,63 @@ impl PipelineTracker {
             ],
         )?;
         Ok(())
+    }
+
+    /// Records a generated resume/cover letter pair against a job. Called
+    /// automatically by `tailor` - every tailoring run is kept, not just the
+    /// latest, so a resubmission after tweaking the profile doesn't erase
+    /// the record of what was actually sent the first time.
+    pub fn record_application(
+        &self,
+        job_id: &str,
+        resume_text: &str,
+        cover_letter_text: &str,
+        model_used: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO applications (id, job_id, resume_text, cover_letter_text, model_used, generated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                job_id,
+                resume_text,
+                cover_letter_text,
+                model_used,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The most recent tailored resume/cover letter generated for a job, if
+    /// any - what you'd want to see again ahead of an interview.
+    pub fn get_latest_application(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<crate::models::job::Application>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, job_id, resume_text, cover_letter_text, model_used, generated_at
+             FROM applications WHERE job_id = ?1 ORDER BY generated_at DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query([job_id])?;
+        if let Some(row) = rows.next()? {
+            let generated_at = row
+                .get::<_, String>(5)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now());
+            Ok(Some(crate::models::job::Application {
+                id: row.get(0)?,
+                job_id: row.get(1)?,
+                resume_text: row.get(2)?,
+                cover_letter_text: row.get(3)?,
+                model_used: row.get(4)?,
+                generated_at,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn add_pipeline_entry(

@@ -98,6 +98,22 @@ pub struct JobRow {
     pub scraped_at: DateTime<Utc>,
 }
 
+/// A snapshot of exactly what was submitted for a job, recorded whenever
+/// `tailor` generates a resume/cover letter - so that months later, if a
+/// job's own posting has been taken down or edited, there's still a record
+/// of what was actually sent and for which role. The job's own row (title,
+/// company, description) is the other half of that record - joined by
+/// `job_id`, never duplicated here.
+#[derive(Debug, Clone)]
+pub struct Application {
+    pub id: String,
+    pub job_id: String,
+    pub resume_text: String,
+    pub cover_letter_text: String,
+    pub model_used: String,
+    pub generated_at: DateTime<Utc>,
+}
+
 /// A real, derived timeline event - never fabricated. Built by merging
 /// evaluation and pipeline-status timestamps that already exist in the
 /// database, sorted newest-first.
