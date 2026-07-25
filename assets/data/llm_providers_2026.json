@@ -1,0 +1,223 @@
+{
+  "generated_at": "2026-07-23T17:31:00Z",
+  "providers": [
+    {
+      "id": "groq",
+      "name": "Groq",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": 30,
+        "tpm": 6000,
+        "rpd": 14400
+      },
+      "models": [
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3-32b",
+        "groq/compound",
+        "groq/compound-mini"
+      ],
+      "base_url": "https://api.groq.com/openai/v1",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": true,
+      "notes": "Fastest inference available. Free tier has no credit card required. Rate limits at org level.",
+      "source": "https://console.groq.com/docs/rate-limits"
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": 20,
+        "rpd": 50
+      },
+      "models": [
+        "meta-llama/llama-3.2-3b-instruct:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "deepseek/deepseek-r1:free",
+        "qwen/qwen3-coder:free",
+        "google/gemma-2-9b-it:free",
+        "mistralai/mistral-7b-instruct:free"
+      ],
+      "base_url": "https://openrouter.ai/api/v1",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": true,
+      "notes": "Router to 20+ free models. Single API key. $10 top-up raises RPD to 1,000.",
+      "source": "https://openrouter.ai/docs/guides/routing/routers/free-router"
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral AI",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": "variable",
+        "tpm": "variable",
+        "rpd": "~1B tokens/month"
+      },
+      "models": [
+        "mistral-small-latest",
+        "mistral-large-latest",
+        "codestral-latest",
+        "open-mistral-nemo"
+      ],
+      "base_url": "https://api.mistral.ai/v1",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": true,
+      "notes": "~1B tokens/month on Experiment tier. Requires data training opt-in.",
+      "source": "https://docs.mistral.ai/getting-started/quickstart"
+    },
+    {
+      "id": "cerebras",
+      "name": "Cerebras",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": 30,
+        "tpd": "1M tokens/day"
+      },
+      "models": [
+        "llama-3.3-70b",
+        "gpt-oss-120b",
+        "zai-glm-4.7"
+      ],
+      "base_url": "https://api.cerebras.ai/v1",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": true,
+      "notes": "Very large prompt support. High throughput.",
+      "source": "https://inference-docs.cerebras.ai/api-reference/chat-completions"
+    },
+    {
+      "id": "google_ai_studio",
+      "name": "Google AI Studio",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": "5-15",
+        "rpd": "20-1500"
+      },
+      "models": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemma-2-9b-it"
+      ],
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": false,
+      "notes": "Up to 1M context window. Uses data for training outside EU/UK/EEA.",
+      "source": "https://ai.google.dev/gemini-api/docs/rate-limits"
+    },
+    {
+      "id": "github_models",
+      "name": "GitHub Models",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": 15,
+        "rpd": "150-1000"
+      },
+      "models": [
+        "gpt-4o",
+        "claude-3.5-sonnet",
+        "llama-3.3-70b-instruct",
+        "phi-4",
+        "gemma-2-9b-it"
+      ],
+      "base_url": "https://models.github.ai/inference",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": true,
+      "notes": "GitHub-native prototyping. Requires GitHub account.",
+      "source": "https://docs.github.com/en/github-models"
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face Inference",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": "variable",
+        "rpd": "community-rate-limited"
+      },
+      "models": [
+        "meta-llama/Llama-2-7b-chat-hf",
+        "microsoft/Phi-4",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.3"
+      ],
+      "base_url": "https://api-inference.huggingface.co/models",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": false,
+      "notes": "Rate-limited free tier. Production requires Inference Endpoints.",
+      "source": "https://huggingface.co/docs/api-inference"
+    },
+    {
+      "id": "nvidia_nim",
+      "name": "NVIDIA NIM",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": "high",
+        "rpd": "~1000"
+      },
+      "models": [
+        "meta/llama-3.1-8b-instruct",
+        "meta/llama-3.3-70b-instruct",
+        "deepseek-ai/deepseek-r1",
+        "qwen/qwen2.5-72b-instruct"
+      ],
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": true,
+      "notes": "NVIDIA-hosted inference. Build account required.",
+      "source": "https://build.nvidia.com/nim"
+    },
+    {
+      "id": "cloudflare_workers_ai",
+      "name": "Cloudflare Workers AI",
+      "free_tier": true,
+      "credit_card_required": false,
+      "rate_limits": {
+        "rpm": "high",
+        "rpd": "~10K neurons/day"
+      },
+      "models": [
+        "llama-3.1-8b-instruct",
+        "gemma-2-9b-it",
+        "mistral-7b-instruct-v0.3"
+      ],
+      "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ ai/run",
+      "auth_header": "Bearer {api_key}",
+      "openai_compatible": false,
+      "notes": "Edge deployment. Limited context window.",
+      "source": "https://developers.cloudflare.com/workers-ai"
+    }
+  ],
+  "local_inference": [
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "free_tier": true,
+      "credit_card_required": false,
+      "models": [
+        "qwen2.5:0.5b",
+        "qwen2.5:1.5b",
+        "qwen2.5:3b",
+        "qwen2.5:7b",
+        "llama3.2:1b",
+        "llama3.2:3b",
+        "gemma2:2b",
+        "gemma2:9b",
+        "mistral:7b-instruct"
+      ],
+      "base_url": "http://localhost:11434",
+      "auth_header": "none",
+      "openai_compatible": true,
+      "notes": "Completely local. No API key needed. Hardware-dependent performance."
+    }
+  ]
+}

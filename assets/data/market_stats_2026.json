@@ -1,0 +1,71 @@
+{
+  "apac_tech_hiring": {
+    "q3_2026_intention_pct": 28,
+    "tech_it_services_pct": 39,
+    "information_pct": 36,
+    "india_pct": 48,
+    "china_pct": 33,
+    "singapore_pct": 13,
+    "hong_kong_pct": -9,
+    "japan_pct": 1,
+    "employers_increasing_headcount_pct": 43,
+    "australia_ict_ads_yoy_pct": -13.5,
+    "singapore_live_job_ads_june_2026": 223535
+  },
+  "pm_gtm_trends": {
+    "open_pm_positions_worldwide_mar_2026": 26900,
+    "increase_since_2023_factor": 2.3,
+    "remote_pm_roles_yoy_pct": 43,
+    "pm_requiring_ai_experience_pct": 61,
+    "ai_pm_salary_premium_pct": [15, 30],
+    "singapore_senior_pm_range_sgd": [90000, 180000],
+    "singapore_senior_pm_total_comp_top_sgd": 263000,
+    "anz_gtm_peak_apr_2026": 7730,
+    "anz_gtm_contraction_may_2026_pct": -37,
+    "anz_gtm_count_may_2026": 4856,
+    "ai_in_gtm_ads_pct": 17.1
+  },
+  "contract_rates": {
+    "australia_day_rate_range_aud": [650, 1750],
+    "contractor_fte_premium_gross_pct": [20, 40],
+    "contractor_fte_premium_net_pct": [10, 20],
+    "anz_gtm_agency_fronted_q4_fy26_pct": 8.0
+  },
+  "time_to_hire": {
+    "global_median_days": [38, 44],
+    "tech_engineering_days": [49, 62],
+    "australia_senior_ic_median_days": 21,
+    "australia_senior_ic_best_days": "low-teens",
+    "app_review_to_recruiter_screen_days": 8
+  },
+  "ai_impact": {
+    "auto_rejection_before_human_review_pct": 75,
+    "avg_applications_per_role": 300,
+    "ats_score_75_plus_callback_improvement_factor": 2.4,
+    "algorithmic_writing_assistance_hire_improvement_pct": 7.8,
+    "americans_used_ai_on_last_resume_pct": 42.6,
+    "fully_ai_generated_resume_submitted_pct": 27.1
+  },
+  "linkedin_outreach": {
+    "platform_acceptance_pct": 28.5,
+    "acceptance_yoy_decline_pct": -37,
+    "connection_reply_pct": 3.0,
+    "message_reply_pct": 10.4,
+    "staffing_acceptance_pct": 36.5,
+    "staffing_reply_pct": 6.6,
+    "staffing_message_reply_pct": 18.9,
+    "computer_software_acceptance_pct": 27.5,
+    "computer_software_reply_pct": 2.8,
+    "computer_software_message_reply_pct": 8.8,
+    "multichannel_lift_factor": [2, 4],
+    "touches_capturing_93_2_pct": 3,
+    "touches_capturing_97_7_pct": 4
+  },
+  "hardware_benchmarks": {
+    "intel_arc_a370m_inf_per_sec": 241,
+    "intel_iris_xe_inf_per_sec": 1274,
+    "cpu_only_inf_per_sec": 10,
+    "q4_k_m_minimum_for_structured_output": true,
+    "q3_k_drops_reasoning_quality": true
+  }
+}

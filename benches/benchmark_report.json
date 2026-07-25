@@ -1,0 +1,119 @@
+{
+  "timestamp": "2026-07-23T17:16:17Z",
+  "baseline": [
+    {
+      "command": "profile init --linkedin C:\\Users\\simon\\Repos\\ATSassin\\assets\\examples\\linkedin_test\\Profile.csv",
+      "metric": "profile_init_ms",
+      "elapsed_ms": 1035,
+      "returncode": 0,
+      "stderr_snippet": ""
+    },
+    {
+      "command": "roles infer -n 5",
+      "metric": "roles_infer_ms",
+      "elapsed_ms": 5100,
+      "returncode": 0,
+      "stderr_snippet": ""
+    },
+    {
+      "command": "playbook",
+      "metric": "playbook_ms",
+      "elapsed_ms": 903,
+      "returncode": 0,
+      "stderr_snippet": ""
+    },
+    {
+      "command": "pipeline list",
+      "metric": "pipeline_list_ms",
+      "elapsed_ms": 945,
+      "returncode": 0,
+      "stderr_snippet": ""
+    }
+  ],
+  "quality_loop": {
+    "scores": [
+      0.6,
+      0.6,
+      0.0,
+      0.6,
+      0.6,
+      0.6,
+      0.6,
+      0.6,
+      0.6,
+      0.0
+    ],
+    "final_score": 0.0,
+    "iterations": 10,
+    "target_met": false
+  },
+  "competitor_comparison": {
+    "atsassin": {
+      "binary_size_mb": 8.31,
+      "install_complexity": "single binary",
+      "dependencies": 0,
+      "offline_capable": true,
+      "role_inference": true,
+      "job_scoring": true,
+      "resume_tailoring": true,
+      "cover_letter": true,
+      "pipeline_tracker": true,
+      "tui_dashboard": true,
+      "ghost_job_detection": true,
+      "job_fact_patching": true,
+      "anti_ai_slop": true,
+      "rlhf_feedback": true,
+      "market_stats": true,
+      "distillation_export": true,
+      "hardware_detection": true,
+      "gpu_detected": true,
+      "llm_providers": [
+        "Ollama",
+        "Kimi",
+        "Glm",
+        "Groq",
+        "OpenRouter",
+        "OpenAI",
+        "Anthropic"
+      ],
+      "profile_sources": [
+        "LinkedIn CSV",
+        "Markdown",
+        "DOCX",
+        "Portfolio URL"
+      ]
+    },
+    "career-ops": {
+      "setup": "npm install + AI CLI required",
+      "role_inference": "manual archetype editing",
+      "job_scoring": "Blocks A-F rubric",
+      "ghost_job_detection": "Block G legitimacy",
+      "rlhf_feedback": "auto-memory + corrections",
+      "offline_capable": false
+    },
+    "Resume-Matcher": {
+      "setup": "Docker or Node+Python",
+      "role_inference": false,
+      "job_scoring": "ATS keyword coverage + LLM",
+      "ghost_job_detection": false,
+      "rlhf_feedback": false,
+      "offline_capable": true
+    },
+    "ApplyPilot": {
+      "setup": "pip install + Chrome for auto-apply",
+      "role_inference": false,
+      "job_scoring": "1-10 LLM score",
+      "ghost_job_detection": false,
+      "rlhf_feedback": false,
+      "offline_capable": false
+    },
+    "job_finder": {
+      "setup": "Python venv + Ollama + LaTeX",
+      "role_inference": false,
+      "job_scoring": "8-dimension semantic",
+      "ghost_job_detection": false,
+      "rlhf_feedback": false,
+      "offline_capable": true
+    }
+  }
+}

@@ -1,0 +1,20 @@
+/target
+.atsassin.db
+*.sqlite
+*.db
+.env
+.env.local
+config.toml
+profile.md
+*.pdf
+*.docx
+.DS_Store
+Thumbs.db
+
+# AI-tooling artifacts, not part of the project
+.kilo/
+session-ses_*.md
+
+# Competitor clones pulled in for benchmarking (see docs/COMPETITIVE_BENCHMARK_2026-07-25.md) -
+# other projects' full source trees, not part of ATSassin itself
+/benchmarks/
