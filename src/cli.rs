@@ -134,7 +134,11 @@ pub enum PipelineAction {
         status: Option<String>,
         #[arg(short, long)]
         notes: Option<String>,
-        #[arg(short, long)]
+        // Explicit 'C' (not the auto-derived 'c') - 'c' is already the
+        // global --config short flag, visible in every subcommand. Only
+        // caught by clap's debug_assert, which is compiled out of release
+        // builds - found via CI's non-release `cargo test`, not locally.
+        #[arg(short = 'C', long)]
         contact: Option<String>,
         /// Follow-up date as YYYY-MM-DD
         #[arg(short, long = "follow-up")]
@@ -185,9 +189,12 @@ pub enum FeedbackActionCli {
         recommendation: String,
         #[arg(short, long)]
         edited: Option<String>,
-        #[arg(short, long, default_value_t = 0.0)]
+        // Explicit distinct short flags - both auto-derive to 'c' from
+        // their field name, which clap's debug_assert rejects (compiled
+        // out of release builds, so this only surfaces in debug/test runs).
+        #[arg(short = 'b', long, default_value_t = 0.0)]
         confidence_before: f64,
-        #[arg(short, long, default_value_t = 0.0)]
+        #[arg(short = 'A', long, default_value_t = 0.0)]
         confidence_after: f64,
     },
     Stats {
