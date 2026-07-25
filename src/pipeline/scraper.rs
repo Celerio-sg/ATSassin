@@ -236,6 +236,14 @@ impl Scraper {
             .ok();
             let location_sel = scraper::Selector::parse("span.job-search-card__location").ok();
             let link_sel = scraper::Selector::parse("a.base-card__full-link").ok();
+            // LinkedIn's guest cards carry the real posting date as an ISO
+            // `datetime` attribute on this <time> element - previously
+            // ignored, which meant every job silently got "posted now"
+            // regardless of how old the listing actually was.
+            let date_sel = scraper::Selector::parse(
+                "time.job-search-card__listdate, time.job-search-card__listdate--new",
+            )
+            .ok();
 
             for card in document.select(&card_sel).take(limit) {
                 let title = title_sel
@@ -271,12 +279,23 @@ impl Scraper {
                     .filter(|s| !s.is_empty())
                     .unwrap_or_else(|| "Unknown".to_string());
 
+                let posted_at = date_sel
+                    .as_ref()
+                    .and_then(|s| card.select(s).next())
+                    .and_then(|e| e.value().attr("datetime"))
+                    .and_then(|d| {
+                        DateTime::parse_from_rfc3339(&format!("{d}T00:00:00Z"))
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                    .unwrap_or_else(Utc::now);
+
                 jobs.push(JobSummary {
                     title,
                     company,
                     location,
                     url,
-                    posted_at: Some(Utc::now()),
+                    posted_at: Some(posted_at),
                     snippet: "LinkedIn job posting".to_string(),
                     description: None,
                 });
