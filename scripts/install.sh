@@ -12,7 +12,7 @@ fi
 
 echo "Cloning ATSassin..."
 if [ ! -d "ATSassin" ]; then
-  git clone https://github.com/srbhr/ATSassin.git
+  git clone https://github.com/Celerio-sg/ATSassin.git
 fi
 cd ATSassin
 

@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["ATSassin Contributors"]
 license = "MIT"
 description = "The silent killer of bad job matches. A lightweight, privacy-first, local-first job search assassin."
-repository = "https://github.com/srbhr/ATSassin"
+repository = "https://github.com/Celerio-sg/ATSassin"
 keywords = ["job-search", "resume", "ats", "ollama", "local-first", "privacy"]
 categories = ["command-line-utilities", "text-processing"]
 

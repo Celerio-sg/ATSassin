@@ -1,0 +1,63 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Real, reproducible bug reports are the highest-leverage contribution to this project — see `docs/ROADMAP.md` for the ground-truth standard we hold fixes to.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, what actually happened?
+      placeholder: |
+        Command: atsassin scan --role "..." --location "..."
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands, in order, from a clean state if possible.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `atsassin --version`, or the git commit hash if built from source.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: LLM provider (if relevant)
+      options:
+        - Ollama (local)
+        - Groq
+        - Kimi
+        - GLM
+        - Lightning
+        - OpenRouter
+        - OpenAI
+        - Anthropic
+        - Not applicable
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output / logs
+      description: Paste the actual terminal output. Redact anything personal (real job descriptions, emails, resume content) — synthetic/anonymized examples are fine.
+      render: shell

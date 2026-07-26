@@ -1,5 +1,9 @@
 # ATSassin
 
+[![CI](https://github.com/Celerio-sg/ATSassin/actions/workflows/ci.yml/badge.svg)](https://github.com/Celerio-sg/ATSassin/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 > The silent killer of bad job matches.
 
 ATSassin is a lightweight, privacy-first, local-first job search assassin. It parses your CV, LinkedIn export, and portfolio to dynamically infer suitable roles, deep-research markets, score jobs with ATS accuracy, tailor resumes and cover letters, and track your pipeline — all on your machine with Ollama or your favorite local LLM.
@@ -20,10 +24,10 @@ See [PLAYBOOK.md](PLAYBOOK.md) for the integrated APAC-focused playbook covering
 
 ```bash
 # One-liner
-curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/srbhr/ATSassin/main/scripts/install.sh | bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Celerio-sg/ATSassin/main/scripts/install.sh | bash
 
 # Or manual
-git clone https://github.com/srbhr/ATSassin.git && cd ATSassin
+git clone https://github.com/Celerio-sg/ATSassin.git && cd ATSassin
 cargo build --release
 cp .env.example .env
 ./target/release/atsassin profile init --resume profile.md
@@ -102,6 +106,10 @@ A scheduled GitHub Action (`/.github/workflows/board_health.yml`) sweeps every s
 3. Configure `.env` with your Ollama endpoint.
 4. Run `atsassin profile init --resume resume.md`.
 
+## Contributing
+
+Contributions are genuinely wanted, not just tolerated — the goal is to make good job-search tooling free and accessible to anyone. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and conventions, [docs/ROADMAP.md](docs/ROADMAP.md) for known gaps, and [open issues](https://github.com/Celerio-sg/ATSassin/issues) labeled `good first issue` for a place to start. This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). Found a security issue? See [SECURITY.md](SECURITY.md) — please don't file it as a public issue.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

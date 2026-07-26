@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, check `docs/ROADMAP.md` and the [open issues](https://github.com/Celerio-sg/ATSassin/issues) — it might already be tracked. For anything touching the autonomous-loop roadmap specifically, see `docs/DESIGN_autonomous_loop.md` §0 for the design principles new features are expected to respect (lightweight by default, no new hard dependencies without a strong reason, opt-in for anything with real-world side effects).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What can't you do today that you'd want to?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: If you have a specific approach in mind, describe it. Not required — "here's the problem" is a useful issue on its own.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Anything else you thought about, and why it didn't fit.
