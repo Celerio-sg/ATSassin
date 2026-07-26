@@ -42,7 +42,10 @@ cp .env.example .env
 | `atsassin evaluate --job-id <id>` / `--file <jd.txt>` | ATS-score a job against your profile |
 | `atsassin tailor --job-id <id>` / `--file <jd.txt>` | Generate tailored resume + cover letter |
 | `atsassin pipeline list` | Track applications in SQLite |
+| `atsassin pipeline show --job-id <id>` | Show full details for a single pipeline entry |
 | `atsassin pipeline update --job-id <id> --status <status> [--notes] [--contact] [--follow-up YYYY-MM-DD]` | Update tracking fields for a pipeline entry |
+| `atsassin recommend` | Recommend next best jobs/actions from your pipeline and scores |
+| `atsassin scan --role <query> --location <location>` | Scan job boards filtered by location |
 | `atsassin tui` | Terminal dashboard — infer roles, scan, evaluate, and tailor without leaving it (`e`/`t`/`s`/`r`, `p` to toggle preference filter, `x` to sort by local relevance) |
 
 ## Hardware Modes
