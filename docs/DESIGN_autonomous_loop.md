@@ -86,8 +86,8 @@ A single CLI invocation is a degenerate graph (one node). The target architectur
         └────────────────────┼─────────────────────┘
                              │
                 ┌────────────▼────────────┐
-                │   Compute / Resource    │
-                │        Broker           │
+                │   Compute Broker /      │
+                │   Archive Manager       │
                 │  Routes every task to   │
                 │  the best available     │
                 │  free/local/paid node.  │
@@ -138,12 +138,18 @@ CREATE TABLE provider_quota (
 
 Providers: whatever's already in `config::LlmProvider` plus Ollama. No new provider gets a row until the user configures a key for it — the broker routes among what's actually usable, it doesn't advertise providers the user hasn't opted into.
 
-### 5.2 Resource Broker
+**Recommend-don't-automate, for a later phase:** routing only among configured providers is right for the reasons above, but it leaves real value on the table — a user with no `GROQ_API_KEY` set is missing a genuinely free, fast provider they'd probably want. The broker should not sign up for that on the user's behalf (real ToS and credential-handling risk - see §8.3), but it could *recommend* it: "you have no free-tier cloud provider configured; Groq offers a free tier with no credit card at console.groq.com" printed once, informationally, the first time the broker notices every configured route is exhausted or absent. Purely advisory, no automation, and explicitly a Phase 1+ nice-to-have, not part of the Phase 1 MVP - noted here so a future reviewer doesn't mistake "we don't discover providers automatically" for "we never help the user find one."
+
+**Paid-fallback policy (resolves Open Question #1 below rather than leaving it open):** no paid provider is ever used without the user explicitly setting a `allow_paid = true` flag for that specific provider in config - not a global switch, not an implicit fallback when free/local options are exhausted. Exhausting free capacity should surface as "no capacity available, configure a provider or wait for reset," never a silent switch to a provider that bills the user. This is a default worth stating plainly rather than leaving as an open question a later implementer has to guess at.
+
+### 5.2 Archive Manager *(renamed from "Resource Broker")*
+
+Renamed because, with cloud-storage arbitrage removed from scope (see below), "Resource Broker" over-promises relative to what this component actually does — a local compression/archival scheduler, not a broker choosing among multiple resource providers. If cloud archival is ever built (see the deferred item below), it re-earns a broker-shaped name at that point; until then, call it what it is.
 
 **Revised: scoped down.** The original draft's cloud-storage/compute arbitrage (R2, B2, GitHub Actions minutes, HF endpoints) solves a problem this project doesn't have yet — a single user's job-search telemetry is realistically low tens of MB, not something that needs a multi-provider cloud-storage broker. Building that now is solving for scale that doesn't exist while adding real cost: it requires the user to already have accounts/credentials for services unrelated to job search (contradicting "single binary, zero setup"), and several of those free tiers explicitly restrict automated/bulk usage in their ToS — the same "never evade rate limits or ToS" principle this design already commits to in §7 cuts against automating signup-free usage of them without a human confirming each provider relationship first.
 
 **What actually needs building, in order:**
-1. **Local compression only.** `zstd`-compress telemetry/archive rows older than 30 days in place, in SQLite. Solves the real, current problem (unbounded local DB growth) with a well-understood, already-a-Cargo-dependency-away technique. No network, no new accounts, no new trust boundary.
+1. **Local compression only, into a separate cold table, not an in-place blob swap.** Concretely: rows older than 30 days are removed from the hot `telemetry`/`feedback` tables, `zstd`-compressed, and written to a new `telemetry_archive` table (`id, source_table, compressed_blob, original_row_count, compressed_at`) keyed so they can be decompressed and rehydrated on demand. This is the deliberate choice, not "just gzip the column in place": hot-table queries (recent telemetry, active pipeline reads) stay on uncompressed rows and pay zero decompression cost on the common path; only the rare "look at old history" query touches the archive table and pays to decompress. An in-place blob column would make *every* read of that column pay a decompression cost, including the ones that hit it most. This distinction belongs in the Phase 2 issue (#27) directly, not just this doc, since it changes the schema, not just the compression step.
 2. **Cloud archival stays fully out of scope until local compression is shipped and someone's local DB has actually grown large enough to need it.** If/when that's real, it should be a single explicit `--archive-to <provider>` opt-in per user, not a broker silently choosing among providers on their behalf — the whole point of "opt-in-only" in this document's stated principles.
 
 This section intentionally does less than the original draft. That's the point.
@@ -172,6 +178,8 @@ Guardrails:
 ### 5.4 Outcome ingestion
 
 Closes the loop by reading real-world outcomes. **This is the highest-leverage phase and the best-scoped one for an external contributor to start on** — it's parsing and classification against a local mailbox, no daemon, no browser automation, no new hard dependencies beyond an IMAP client crate.
+
+**Off by default.** Every other opt-in boundary in this design (paid providers, cloud archival, actuation) is explicit; outcome ingestion needs the same treatment and the original draft didn't say so outright. Nothing reads the user's mailbox until they explicitly run `atsassin outcomes connect` and store a credential - there is no ambient/automatic mailbox access, ever, and no other command should trigger it as a side effect.
 
 Sources:
 - IMAP email parsing for rejection/interview/offer emails (start with plain IMAP + app-password auth, which every major provider supports without OAuth complexity; add OAuth for Gmail/Outlook as a later, separate task once IMAP+app-password proves the classification logic works).
@@ -346,7 +354,7 @@ Re-cut so phases 0-2 need no daemon, no new hard dependencies, and no cloud acco
 
 ## 10. Open questions
 
-1. Should paid-fallback providers be auto-used when free tiers are exhausted, or should they require explicit per-session approval? *(Leaning: explicit approval, at least initially - consistent with every other "costs the user money" boundary in this doc.)*
+1. ~~Should paid-fallback providers be auto-used when free tiers are exhausted, or should they require explicit per-session approval?~~ **Resolved, not left open:** no paid provider is used without an explicit per-provider `allow_paid = true` config flag - see §5.1. Exhausted free/local capacity surfaces as "no capacity available," never a silent paid fallback.
 2. Which external training stack should `atsassin distill`'s generated script target first - `llama.cpp` LoRA tooling, `mlx-lm` (Apple Silicon), or `unsloth`? Probably start with whichever the existing script-generation path already targets, if any, and extend from there.
 3. ~~Should cold-archive encryption keys be derived from a user password, or stored alongside the config?~~ Deferred with cloud archival itself (§5.2) - not a question worth answering before there's a cloud archive to encrypt.
 4. What is the acceptable quality-drop threshold for deploying a distilled model?
