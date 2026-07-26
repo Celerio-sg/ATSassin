@@ -762,9 +762,12 @@ impl PipelineTracker {
                 role.fit_score,
                 serde_json::to_string(&role.market_demand).unwrap_or_default(),
                 role.compensation_band.currency,
-                role.compensation_band.min,
-                role.compensation_band.max,
-                role.compensation_band.median,
+                // rusqlite's ToSql no longer covers u64 directly (removed
+                // upstream over platform-width ambiguity) - i64 is what
+                // SQLite's INTEGER affinity actually stores.
+                role.compensation_band.min as i64,
+                role.compensation_band.max as i64,
+                role.compensation_band.median as i64,
                 role.compensation_band.source,
                 serde_json::to_string(&role.typical_requirements).unwrap_or_default(),
                 serde_json::to_string(&role.top_companies).unwrap_or_default(),
