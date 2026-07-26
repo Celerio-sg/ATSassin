@@ -348,6 +348,30 @@ impl ProfileParser {
             profile.name = "LinkedIn User".to_string();
         }
 
+        // `profile init --linkedin` only persists `raw_text` to disk
+        // (profile.md) - the parsed `UserProfile` fields (including the
+        // location/email/phone this function just extracted) never reach
+        // disk any other way. Without these lines, a later `profile show`
+        // or any other command that re-parses profile.md as Markdown would
+        // silently lose location/email/phone the moment they round-trip
+        // through the file - confirmed by running the real fixture in
+        // assets/examples/linkedin_test end-to-end, not just unit-testing
+        // this function in isolation. See GitHub issue #15.
+        let mut contact_lines = String::new();
+        if let Some(loc) = &profile.location {
+            contact_lines.push_str(&format!("Location: {loc}\n"));
+        }
+        if let Some(email) = &profile.email {
+            contact_lines.push_str(&format!("Email: {email}\n"));
+        }
+        if let Some(phone) = &profile.phone {
+            contact_lines.push_str(&format!("Phone: {phone}\n"));
+        }
+        if !contact_lines.is_empty() {
+            profile.raw_text.push_str(&contact_lines);
+            profile.raw_text.push('\n');
+        }
+
         Ok(profile)
     }
 
@@ -403,23 +427,48 @@ impl ProfileParser {
             .map(|s| s.trim().to_string())
     }
 
+    /// Looks for an explicit `Label: value` line first (as written by the
+    /// LinkedIn-export round-trip - see the note in `parse_linkedin_export`
+    /// on why this label exists), falling back to `fallback` only when no
+    /// such line is present.
+    fn extract_labeled_or(
+        text: &str,
+        label: &str,
+        fallback: impl FnOnce() -> Option<String>,
+    ) -> Option<String> {
+        let re = regex::Regex::new(&format!(r"(?im)^{label}\s*[:\-]\s*(.+)$")).ok()?;
+        if let Some(cap) = re.captures(text) {
+            let v = cap.get(1).map(|m| m.as_str().trim().to_string());
+            if let Some(v) = v.filter(|s| !s.is_empty()) {
+                return Some(v);
+            }
+        }
+        fallback()
+    }
+
     fn extract_email(text: &str) -> Option<String> {
-        let re = regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").ok()?;
-        re.find(text).map(|m| m.as_str().to_string())
+        Self::extract_labeled_or(text, "email", || {
+            let re = regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").ok()?;
+            re.find(text).map(|m| m.as_str().to_string())
+        })
     }
 
     fn extract_phone(text: &str) -> Option<String> {
-        let re = regex::Regex::new(r"\+?\d[\d\s\-()]{8,}").ok()?;
-        re.find(text).map(|m| m.as_str().to_string())
+        Self::extract_labeled_or(text, "phone", || {
+            let re = regex::Regex::new(r"\+?\d[\d\s\-()]{8,}").ok()?;
+            re.find(text).map(|m| m.as_str().to_string())
+        })
     }
 
     fn extract_location(text: &str) -> Option<String> {
-        for line in text.lines().take(10) {
-            if line.contains(",") && line.len() < 100 {
-                return Some(line.trim().to_string());
+        Self::extract_labeled_or(text, "location", || {
+            for line in text.lines().take(10) {
+                if line.contains(",") && line.len() < 100 {
+                    return Some(line.trim().to_string());
+                }
             }
-        }
-        None
+            None
+        })
     }
 
     fn extract_summary(text: &str) -> Option<String> {
