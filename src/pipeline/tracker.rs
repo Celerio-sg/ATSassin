@@ -593,7 +593,7 @@ impl PipelineTracker {
             });
         }
 
-        events.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        events.sort_by_key(|e| std::cmp::Reverse(e.timestamp));
         events.truncate(limit);
         Ok(events)
     }
