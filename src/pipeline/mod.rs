@@ -1,5 +1,8 @@
+pub mod actuation;
 pub mod automation;
+pub mod board_discovery;
 pub mod company_directory;
+pub mod outcomes;
 pub mod scanner;
 pub mod scraper;
 pub mod social_scraper;

@@ -26,6 +26,10 @@ pub struct JobSummary {
 pub struct Scraper {
     pub rate_limit_ms: u64,
     pub user_agent: String,
+    /// Issue #1: dynamically discovered company->slug mappings that augment
+    /// the hand-curated `company_directory.rs` list. Kept separate so a
+    /// stale hand-curated entry never blocks a discovered one.
+    pub extra_companies: Vec<(String, String)>,
 }
 
 const BROWSER_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -35,7 +39,15 @@ impl Scraper {
         Self {
             rate_limit_ms,
             user_agent,
+            extra_companies: Vec::new(),
         }
+    }
+
+    /// Add dynamically discovered company slug pairs (issue #1). The pairs
+    /// follow the same `(display_name, slug)` shape as the curated list.
+    pub fn with_extra_companies(mut self, extra: Vec<(String, String)>) -> Self {
+        self.extra_companies = extra;
+        self
     }
 
     pub async fn scrape_board(
@@ -721,6 +733,14 @@ impl Scraper {
         use crate::pipeline::company_directory::all_greenhouse_companies;
         let start = std::time::Instant::now();
 
+        // Merge curated list with any dynamically discovered boards (issue
+        // #1). Extra companies are appended after the curated ones so the
+        // curated order/highlighting stays stable.
+        let mut sweep_targets: Vec<(&str, &str)> = all_greenhouse_companies().into_iter().collect();
+        for (name, slug) in &self.extra_companies {
+            sweep_targets.push((name.as_str(), slug.as_str()));
+        }
+
         // Every one of these companies is hosted on the same
         // boards-api.greenhouse.io host, so firing all requests at once
         // hammers a single host rather than spreading load. Capping
@@ -728,7 +748,6 @@ impl Scraper {
         // limited host stay within its own budget rather than starving
         // requests to other hosts when we eventually fan out to Lever /
         // Ashby alongside Greenhouse.
-        let sweep_targets = all_greenhouse_companies();
         let host = "boards-api.greenhouse.io";
         let semaphore = host_semaphore(host, 6);
 

@@ -128,6 +128,79 @@ impl TelemetryLogger {
         Ok(accepted as f64 / total as f64)
     }
 
+    /// Archive telemetry records older than `days` into a `.zst`
+    /// sidecar. Recent records are kept in the hot journal. Returns the
+    /// number of archived records.
+    pub fn archive_old_records(&self, days: i64) -> Result<usize> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
+        let data = fs::read_to_string(&self.journal_path).unwrap_or_default();
+        if data.is_empty() {
+            return Ok(0);
+        }
+
+        let mut old_lines: Vec<String> = Vec::new();
+        let mut recent_lines: Vec<String> = Vec::new();
+
+        for line in data.lines() {
+            let is_old = serde_json::from_str::<LlmCall>(line)
+                .ok()
+                .and_then(|call| {
+                    chrono::DateTime::parse_from_rfc3339(&call.ts)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&chrono::Utc) < cutoff)
+                })
+                .unwrap_or(false);
+
+            if is_old {
+                old_lines.push(line.to_string());
+            } else {
+                recent_lines.push(line.to_string());
+            }
+        }
+
+        if old_lines.is_empty() {
+            return Ok(0);
+        }
+
+        let archive_path = self.journal_path.with_extension("jsonl.zst");
+        let existing = if archive_path.exists() {
+            fs::read(&archive_path).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        let mut encoder = zstd::stream::write::Encoder::new(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&archive_path)?,
+            3,
+        )?;
+
+        if !existing.is_empty() {
+            std::io::Write::write_all(&mut encoder, &existing)?;
+        }
+        for line in &old_lines {
+            encoder.write_all(line.as_bytes())?;
+            encoder.write_all(b"\n")?;
+        }
+        encoder.finish()?;
+
+        // Rewrite hot journal with only recent records.
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&self.journal_path)?;
+        for line in recent_lines {
+            file.write_all(line.as_bytes())?;
+            file.write_all(b"\n")?;
+        }
+
+        Ok(old_lines.len())
+    }
+
     pub fn avg_latency_ms(&self, provider: &str, window_hours: i64) -> Result<f64> {
         let cutoff = chrono::Utc::now() - chrono::Duration::hours(window_hours);
         let mut total_ms = 0u128;
@@ -232,6 +305,66 @@ mod tests {
         let logger = TelemetryLogger::new(&journal);
         let avg = logger.avg_latency_ms("groq", 24).unwrap();
         assert_eq!(avg, 0.0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_archive_old_records_compresses_and_keeps_recent() {
+        let dir = std::env::temp_dir().join("atsassin_test_telemetry_archive");
+        let _ = fs::create_dir_all(&dir);
+        let journal = dir.join("journal.jsonl");
+        let logger = TelemetryLogger::new(&journal);
+
+        let old_ts = (chrono::Utc::now() - chrono::Duration::days(40)).to_rfc3339();
+        let recent_ts = (chrono::Utc::now() - chrono::Duration::days(5)).to_rfc3339();
+
+        let old_call = LlmCall {
+            call_id: "old-1".into(),
+            ts: old_ts,
+            provider: "groq".into(),
+            model: "llama".into(),
+            task: "scoring".into(),
+            prompt_tokens: 1,
+            completion_tokens: 1,
+            latency_ms: 1,
+            cost_usd: 0.0,
+            success: true,
+            error: None,
+            quality: None,
+            edit_distance: None,
+        };
+        let recent_call = LlmCall {
+            call_id: "recent-1".into(),
+            ts: recent_ts,
+            provider: "groq".into(),
+            model: "llama".into(),
+            task: "scoring".into(),
+            prompt_tokens: 1,
+            completion_tokens: 1,
+            latency_ms: 1,
+            cost_usd: 0.0,
+            success: true,
+            error: None,
+            quality: None,
+            edit_distance: None,
+        };
+        logger.record_call(&old_call).unwrap();
+        logger.record_call(&recent_call).unwrap();
+
+        let archived = logger.archive_old_records(30).unwrap();
+        assert_eq!(archived, 1);
+
+        let hot = fs::read_to_string(&journal).unwrap();
+        assert!(hot.contains("recent-1"));
+        assert!(!hot.contains("old-1"));
+
+        let archive_path = journal.with_extension("jsonl.zst");
+        assert!(archive_path.exists());
+        let compressed = fs::read(&archive_path).unwrap();
+        let decoded = zstd::decode_all(&compressed[..]).unwrap();
+        let decoded_str = String::from_utf8(decoded).unwrap();
+        assert!(decoded_str.contains("old-1"));
+
         let _ = fs::remove_dir_all(&dir);
     }
 }

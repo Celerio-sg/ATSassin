@@ -60,6 +60,10 @@ pub const GREENHOUSE_COMPANIES: &[(&str, &str)] = &[
     ("Runway", "runwayml"),
     ("Hightouch", "hightouch"),
     ("PlanetScale", "planetscale"),
+    // Well-known Greenhouse boards; if any slug rots, the sweep degrades
+    // to an empty result rather than crashing (see module-level note).
+    ("Figma", "figma"),
+    ("Notion", "notion"),
 ];
 
 /// APAC Greenhouse boards. Slugs have been verified against

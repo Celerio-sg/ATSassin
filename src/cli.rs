@@ -27,6 +27,7 @@ pub enum Commands {
     Scan(ScanArgs),
     Evaluate(EvaluateArgs),
     Tailor(TailorArgs),
+    Apply(ApplyArgs),
     Playbook,
     Pipeline(PipelineArgs),
     Tui(TuiArgs),
@@ -35,6 +36,11 @@ pub enum Commands {
     Market(MarketArgs),
     Preferences(PreferencesArgs),
     Recommend(RecommendArgs),
+    Companies(CompaniesArgs),
+    Outcomes(OutcomesArgs),
+    Compute(ComputeArgs),
+    Telemetry(TelemetryArgs),
+    Daemon(DaemonArgs),
 }
 
 #[derive(Args, Debug)]
@@ -45,6 +51,108 @@ pub struct RecommendArgs {
     /// How many persisted jobs to consider (across all past scans)
     #[arg(long, default_value = "500")]
     pub pool: usize,
+}
+
+#[derive(Args, Debug)]
+pub struct CompaniesArgs {
+    #[command(subcommand)]
+    pub action: CompaniesAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum CompaniesAction {
+    /// Discover which ATS board a company uses by scanning its public
+    /// careers page (issue #1).
+    Discover {
+        /// Company display name, e.g. "Acme Corp"
+        #[arg(short, long)]
+        name: String,
+        /// Company domain, e.g. "acme.com"
+        #[arg(short, long)]
+        domain: String,
+    },
+    /// List previously discovered company boards.
+    List,
+}
+
+#[derive(Args, Debug)]
+pub struct OutcomesArgs {
+    #[command(subcommand)]
+    pub action: OutcomesAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum OutcomesAction {
+    /// Store IMAP credentials in the OS keychain (Phase 0).
+    Connect {
+        /// IMAP server, e.g. imap.gmail.com
+        #[arg(short, long)]
+        server: String,
+        /// IMAP port (default 993 for TLS).
+        #[arg(short, long, default_value_t = 993)]
+        port: u16,
+        /// IMAP username, usually the email address.
+        #[arg(short, long)]
+        username: String,
+        /// IMAP password or app-password.
+        #[arg(short, long)]
+        password: String,
+    },
+    /// Read ATS outcome emails and update pipeline statuses (Phase 0).
+    Sync {
+        /// IMAP server, e.g. imap.gmail.com
+        #[arg(short, long)]
+        server: String,
+        /// IMAP port (default 993 for TLS).
+        #[arg(short, long, default_value_t = 993)]
+        port: u16,
+        /// IMAP username, usually the email address.
+        #[arg(short, long)]
+        username: String,
+        /// If provided, use this password instead of the stored one.
+        #[arg(short, long)]
+        password: Option<String>,
+    },
+}
+
+#[derive(Args, Debug)]
+pub struct ComputeArgs {
+    #[command(subcommand)]
+    pub action: ComputeAction,
+}
+
+#[derive(Args, Debug)]
+pub struct TelemetryArgs {
+    #[command(subcommand)]
+    pub action: TelemetryAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TelemetryAction {
+    /// Compress telemetry records older than N days into a zstd archive
+    /// and remove them from the hot journal (Phase 2).
+    Archive {
+        /// Days of recent telemetry to keep uncompressed (default 30).
+        #[arg(short, long, default_value_t = 30)]
+        days: i64,
+    },
+}
+
+#[derive(Args, Debug)]
+pub struct DaemonArgs {
+    /// Daemon tick interval in seconds (default 3600 = 1 hour).
+    #[arg(short, long, default_value_t = 3600)]
+    pub interval: u64,
+    /// Run a single tick and exit instead of looping.
+    #[arg(long, default_value_t = false)]
+    pub once: bool,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ComputeAction {
+    /// Show the current Compute Broker provider registry and cached quota
+    /// (Phase 1).
+    Status,
 }
 
 #[derive(Args, Debug)]
@@ -128,6 +236,16 @@ pub struct TailorArgs {
     pub file: Option<PathBuf>,
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct ApplyArgs {
+    /// Job ID for which the saved application materials will be used.
+    #[arg(short, long)]
+    pub job_id: String,
+    /// Directory to write apply.js and bookmarklet.txt.
+    #[arg(short, long, default_value = "apply_kit")]
+    pub output: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -298,6 +416,7 @@ impl Cli {
             Commands::Scan(args) => self.handle_scan(args).await,
             Commands::Evaluate(args) => self.handle_evaluate(args).await,
             Commands::Tailor(args) => self.handle_tailor(args).await,
+            Commands::Apply(args) => self.handle_apply(args).await,
             Commands::Playbook => self.handle_playbook().await,
             Commands::Pipeline(args) => self.handle_pipeline(args).await,
             Commands::Tui(args) => self.handle_tui(args).await,
@@ -306,6 +425,11 @@ impl Cli {
             Commands::Market(args) => self.handle_market(args).await,
             Commands::Preferences(args) => self.handle_preferences(args).await,
             Commands::Recommend(args) => self.handle_recommend(args).await,
+            Commands::Companies(args) => self.handle_companies(args).await,
+            Commands::Outcomes(args) => self.handle_outcomes(args).await,
+            Commands::Compute(args) => self.handle_compute(args).await,
+            Commands::Telemetry(args) => self.handle_telemetry(args).await,
+            Commands::Daemon(args) => self.handle_daemon(args).await,
         }
     }
 
@@ -404,6 +528,181 @@ impl Cli {
         }
     }
 
+    pub async fn handle_daemon(&self, args: &DaemonArgs) -> Result<()> {
+        let cfg = self.load_config()?;
+        if args.once {
+            let daemon_cfg = crate::engine::daemon::DaemonConfig {
+                interval_sec: 0,
+                boards: Some(cfg.scraping.boards.clone()),
+                role: None,
+                limit: cfg.scraping.max_results_per_board,
+            };
+            let mut once_cfg = daemon_cfg;
+            once_cfg.interval_sec = 0;
+            crate::engine::daemon::run_daemon(cfg, once_cfg).await
+        } else {
+            let daemon_cfg = crate::engine::daemon::DaemonConfig {
+                interval_sec: args.interval,
+                boards: Some(cfg.scraping.boards.clone()),
+                role: None,
+                limit: cfg.scraping.max_results_per_board,
+            };
+            crate::engine::daemon::run_daemon(cfg, daemon_cfg).await
+        }
+    }
+
+    pub async fn handle_telemetry(&self, args: &TelemetryArgs) -> Result<()> {
+        let cfg = self.load_config()?;
+        match &args.action {
+            TelemetryAction::Archive { days } => {
+                let logger = crate::engine::telemetry::TelemetryLogger::new(
+                    cfg.database_path.with_extension("llm_telemetry.jsonl"),
+                );
+                let archived = logger.archive_old_records(*days)?;
+                println!(
+                    "Archived {} telemetry record(s) older than {} days.",
+                    archived, days
+                );
+                Ok(())
+            }
+        }
+    }
+
+    pub async fn handle_compute(&self, args: &ComputeArgs) -> Result<()> {
+        let cfg = self.load_config()?;
+        match &args.action {
+            ComputeAction::Status => {
+                let broker = crate::engine::compute_broker::ComputeBroker::from_config(&cfg);
+                println!("=== Compute Broker Status ===");
+                if broker.providers.is_empty() {
+                    println!("No providers configured.");
+                } else {
+                    for provider in &broker.providers {
+                        println!(
+                            "  {} ({}) - {} - model: {}{}",
+                            provider.name,
+                            provider.tier_type.as_str(),
+                            provider.base_url,
+                            provider.default_model,
+                            if provider.allow_paid {
+                                " [paid ok]"
+                            } else {
+                                ""
+                            }
+                        );
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub async fn handle_companies(&self, args: &CompaniesArgs) -> Result<()> {
+        let cfg = self.load_config()?;
+        let tracker = crate::pipeline::tracker::PipelineTracker::new(&cfg.database_path)?;
+        match &args.action {
+            CompaniesAction::Discover { name, domain } => {
+                println!(
+                    "Discovering ATS board for {} at https://{}...",
+                    name, domain
+                );
+                match crate::pipeline::board_discovery::discover_domain(name, domain).await? {
+                    Some(board) => {
+                        println!(
+                            "Discovered {} board for {}: {} (from {})",
+                            board.ats_type.as_str(),
+                            board.company,
+                            board.slug,
+                            board.source_url
+                        );
+                        tracker.save_company_boards(&[board])?;
+                        println!("Saved to local database.");
+                    }
+                    None => {
+                        println!(
+                            "No known ATS detected on public careers pages for {}.",
+                            name
+                        );
+                    }
+                }
+                Ok(())
+            }
+            CompaniesAction::List => {
+                let boards = tracker.load_company_boards()?;
+                if boards.is_empty() {
+                    println!("No discovered company boards. Run `atsassin companies discover --name <name> --domain <domain>` first.");
+                } else {
+                    println!("Discovered company boards:");
+                    for board in boards {
+                        println!(
+                            "  {} -> {} ({} board, source: {})",
+                            board.company,
+                            board.slug,
+                            board.ats_type.as_str(),
+                            board.source_url
+                        );
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub async fn handle_outcomes(&self, args: &OutcomesArgs) -> Result<()> {
+        let cfg = self.load_config()?;
+        match &args.action {
+            OutcomesAction::Connect {
+                server,
+                port,
+                username,
+                password,
+            } => {
+                let imap_cfg = crate::pipeline::outcomes::ImapConfig {
+                    server: server.clone(),
+                    port: *port,
+                    username: username.clone(),
+                };
+                imap_cfg.save_password(password)?;
+                println!("IMAP credentials stored in OS keychain.");
+                Ok(())
+            }
+            OutcomesAction::Sync {
+                server,
+                port,
+                username,
+                password,
+            } => {
+                let imap_cfg = crate::pipeline::outcomes::ImapConfig {
+                    server: server.clone(),
+                    port: *port,
+                    username: username.clone(),
+                };
+                let password = if let Some(p) = password {
+                    p.clone()
+                } else {
+                    imap_cfg
+                        .load_password()?
+                        .ok_or_else(|| anyhow::anyhow!("No stored IMAP password. Run `atsassin outcomes connect` first or pass --password."))?
+                };
+                let db_path = cfg.database_path.clone();
+                // IMAP is synchronous network I/O; keep it off the async runtime.
+                let signals = tokio::task::spawn_blocking(move || {
+                    let tracker = crate::pipeline::tracker::PipelineTracker::new(&db_path)?;
+                    crate::pipeline::outcomes::sync_email_outcomes(&imap_cfg, &password, &tracker)
+                })
+                .await??;
+                println!("Processed {} outcome signal(s)", signals.len());
+                for signal in &signals {
+                    println!(
+                        "  {:?} -> {:?} ({})",
+                        signal.status, signal.source_id, signal.raw_subject
+                    );
+                }
+                Ok(())
+            }
+        }
+    }
+
     pub async fn handle_scan(&self, args: &ScanArgs) -> Result<()> {
         let cfg = self.load_config()?;
         let telemetry_path = cfg.database_path.with_extension("llm_telemetry.jsonl");
@@ -414,11 +713,29 @@ impl Cli {
             cfg.tiers.full,
             Some(telemetry_path.clone()),
         );
+        let tracker = crate::pipeline::tracker::PipelineTracker::new(&cfg.database_path)?;
+        // Issue #1: augment the curated company sweep with discovered
+        // Greenhouse boards. Other ATS types (Lever/Ashby/Workday) are
+        // detected but not yet swept by this path; they are still saved so
+        // future per-ATS scrapers can use them.
+        let discovered = tracker
+            .load_company_boards()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|b| {
+                matches!(
+                    b.ats_type,
+                    crate::pipeline::board_discovery::AtsType::Greenhouse
+                )
+            })
+            .map(|b| (b.company, b.slug))
+            .collect::<Vec<_>>();
         let scraper = crate::pipeline::scraper::Scraper::new(
             cfg.scraping.rate_limit_ms,
             cfg.scraping.user_agent.clone(),
-        );
-        let tracker = crate::pipeline::tracker::PipelineTracker::new(&cfg.database_path)?;
+        )
+        .with_extra_companies(discovered);
+
         let boards = args.boards.clone().unwrap_or(cfg.scraping.boards.clone());
         let query = args.role.clone().unwrap_or_else(|| "general".to_string());
         let mut scanned_jobs: Vec<crate::models::job::Job> = Vec::new();
@@ -743,6 +1060,30 @@ impl Cli {
             )?;
             println!("Exported to {}", output.display());
         }
+        Ok(())
+    }
+
+    pub async fn handle_apply(&self, args: &ApplyArgs) -> Result<()> {
+        let cfg = self.load_config()?;
+        let tracker = crate::pipeline::tracker::PipelineTracker::new(&cfg.database_path)?;
+        let application = tracker
+            .get_latest_application(&args.job_id)?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No application on file for job {}. Run `atsassin tailor --job-id {}` first.",
+                    args.job_id,
+                    args.job_id
+                )
+            })?;
+
+        let profile_text = std::fs::read_to_string(&cfg.profile_path).unwrap_or_default();
+        let profile =
+            crate::pipeline::actuation::profile_from_application(&profile_text, &application);
+        crate::pipeline::actuation::write_apply_kit(&profile, &args.output)?;
+        println!(
+            "Wrote apply kit to {}. Open apply.js or use the bookmarklet to fill the form. Review before submitting.",
+            args.output.display()
+        );
         Ok(())
     }
 
@@ -1086,6 +1427,14 @@ impl Cli {
             &roles,
             output_dir,
         )?;
+        let journal_path = cfg.database_path.with_extension("llm_telemetry.jsonl");
+        let pair_count =
+            crate::engine::distillation::DistillationPipeline::export_from_feedback_and_telemetry(
+                &cfg.database_path,
+                &journal_path,
+                output_dir,
+            )?;
+        println!("Exported {} high-confidence training pair(s).", pair_count);
 
         let manifest = output_dir.join("manifest.json");
         println!("Exported distillation data to: {}", output_dir.display());

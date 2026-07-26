@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -30,6 +31,11 @@ pub struct LlmResponse {
     pub model: String,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
+    /// HTTP response headers captured from the provider, when available.
+    /// Used by the compute broker to observe rate-limit quotas.
+    /// Not serialised to JSON.
+    #[serde(skip)]
+    pub headers: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -261,6 +267,7 @@ impl LlmClient {
             model: request.model.clone(),
             prompt_tokens: 0,
             completion_tokens: 0,
+            headers: HashMap::new(),
         })
     }
 
@@ -341,6 +348,7 @@ impl LlmClient {
             completion_tokens: u32,
         }
 
+        let headers = resp.headers().clone();
         let parsed: OpenAIResponse = resp.json().await?;
         let choice = parsed.choices.first().context("Empty choices from LLM")?;
 
@@ -353,6 +361,7 @@ impl LlmClient {
                 .as_ref()
                 .map(|u| u.completion_tokens)
                 .unwrap_or(0),
+            headers: header_map_to_hash_map(&headers),
         })
     }
 }
@@ -368,6 +377,17 @@ pub enum LlmProvider {
     Glm,
     Lightning,
     Custom,
+}
+
+fn header_map_to_hash_map(headers: &reqwest::header::HeaderMap) -> HashMap<String, String> {
+    headers
+        .iter()
+        .filter_map(|(k, v)| {
+            let key = k.as_str().to_lowercase();
+            let value = v.to_str().ok()?.to_string();
+            Some((key, value))
+        })
+        .collect()
 }
 
 impl std::fmt::Display for LlmProvider {

@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::debug;
 
+use crate::engine::compute_broker::{ComputeBroker, ProviderQuota};
 use crate::models::job::{
     ActivityEvent, DimensionScore, Evaluation, Job, JobRow, PipelineEntry, PipelineStatus,
     Recommendation,
@@ -12,6 +14,7 @@ use crate::models::profile::UserProfile;
 use crate::models::role::{
     CompensationBand, DemandLevel, MarketDemand, RoleArchetype, Seniority, TrendDirection,
 };
+use crate::pipeline::board_discovery::{AtsType, DiscoveredBoard};
 
 pub struct PipelineTracker {
     conn: Mutex<Connection>,
@@ -776,5 +779,142 @@ impl PipelineTracker {
             ],
         )?;
         Ok(())
+    }
+
+    /// Persist discovered company boards to the SQLite `company_boards`
+    /// table (issue #1).
+    pub fn save_company_boards(&self, boards: &[DiscoveredBoard]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS company_boards (
+                company TEXT PRIMARY KEY,
+                ats_type TEXT NOT NULL,
+                slug TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                discovered_at TEXT NOT NULL
+            )",
+            [],
+        )?;
+
+        let now = Utc::now().to_rfc3339();
+        for board in boards {
+            conn.execute(
+                "INSERT OR REPLACE INTO company_boards (company, ats_type, slug, source_url, discovered_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    board.company,
+                    board.ats_type.as_str(),
+                    board.slug,
+                    board.source_url,
+                    now.clone(),
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Load all persisted discovered company boards.
+    pub fn load_company_boards(&self) -> Result<Vec<DiscoveredBoard>> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS company_boards (
+                company TEXT PRIMARY KEY,
+                ats_type TEXT NOT NULL,
+                slug TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                discovered_at TEXT NOT NULL
+            )",
+            [],
+        )?;
+        let mut stmt =
+            conn.prepare("SELECT company, ats_type, slug, source_url FROM company_boards")?;
+        let mut rows = stmt.query([])?;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next()? {
+            let ats_type_str: String = row.get(1)?;
+            let Ok(ats_type) = ats_type_str.parse::<AtsType>() else {
+                continue;
+            };
+            out.push(DiscoveredBoard {
+                company: row.get(0)?,
+                ats_type,
+                slug: row.get(2)?,
+                source_url: row.get(3)?,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Persist observed provider quota (Phase 1 Compute Broker).
+    pub fn save_provider_quota(&self, broker: &ComputeBroker) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS provider_quota (
+                provider TEXT PRIMARY KEY,
+                tier_type TEXT NOT NULL,
+                remaining_requests INTEGER,
+                remaining_tokens INTEGER,
+                resets_at TEXT,
+                reliability_score REAL,
+                last_observed TEXT
+            )",
+            [],
+        )?;
+
+        for (provider, quota) in &broker.quota_cache {
+            let tier_type = broker
+                .providers
+                .iter()
+                .find(|p| &p.name == provider)
+                .map(|p| p.tier_type.as_str())
+                .unwrap_or("configured");
+            conn.execute(
+                "INSERT OR REPLACE INTO provider_quota (provider, tier_type, remaining_requests, remaining_tokens, resets_at, reliability_score, last_observed)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    provider,
+                    tier_type,
+                    quota.remaining_requests,
+                    quota.remaining_tokens,
+                    quota.resets_at,
+                    quota.reliability_score,
+                    quota.last_observed,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Load persisted provider quota.
+    pub fn load_provider_quota(&self) -> Result<HashMap<String, ProviderQuota>> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS provider_quota (
+                provider TEXT PRIMARY KEY,
+                tier_type TEXT NOT NULL,
+                remaining_requests INTEGER,
+                remaining_tokens INTEGER,
+                resets_at TEXT,
+                reliability_score REAL,
+                last_observed TEXT
+            )",
+            [],
+        )?;
+        let mut stmt = conn.prepare("SELECT provider, remaining_requests, remaining_tokens, resets_at, reliability_score, last_observed FROM provider_quota")?;
+        let mut rows = stmt.query([])?;
+        let mut out = HashMap::new();
+        while let Some(row) = rows.next()? {
+            out.insert(
+                row.get(0)?,
+                ProviderQuota {
+                    remaining_requests: row.get(1)?,
+                    remaining_tokens: row.get(2)?,
+                    resets_at: row.get(3)?,
+                    reliability_score: row.get(4)?,
+                    last_observed: row.get(5)?,
+                },
+            );
+        }
+        Ok(out)
     }
 }

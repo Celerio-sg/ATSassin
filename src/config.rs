@@ -261,9 +261,12 @@ impl AppConfig {
                     cfg.llm.base_url = "https://api.groq.com".to_string();
                     cfg.llm.default_model = std::env::var("GROQ_MODEL")
                         .unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string());
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
+                    cfg.llm.light_model = std::env::var("GROQ_LIGHT_MODEL")
+                        .unwrap_or_else(|_| "llama-3.1-8b-instant".to_string());
+                    cfg.llm.balanced_model = std::env::var("GROQ_BALANCED_MODEL")
+                        .unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string());
+                    cfg.llm.full_model = std::env::var("GROQ_FULL_MODEL")
+                        .unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string());
                     cfg.llm.api_key = std::env::var("GROQ_API_KEY").ok().filter(|v| !v.is_empty());
                     LlmProvider::Groq
                 }
@@ -271,9 +274,12 @@ impl AppConfig {
                     cfg.llm.base_url = "https://openrouter.ai".to_string();
                     cfg.llm.default_model = std::env::var("OPENROUTER_MODEL")
                         .unwrap_or_else(|_| "meta-llama/llama-3.3-70b-instruct".to_string());
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
+                    cfg.llm.light_model = std::env::var("OPENROUTER_LIGHT_MODEL")
+                        .unwrap_or_else(|_| "google/gemma-2-9b-it".to_string());
+                    cfg.llm.balanced_model = std::env::var("OPENROUTER_BALANCED_MODEL")
+                        .unwrap_or_else(|_| "meta-llama/llama-3.3-70b-instruct".to_string());
+                    cfg.llm.full_model = std::env::var("OPENROUTER_FULL_MODEL")
+                        .unwrap_or_else(|_| "meta-llama/llama-3.3-70b-instruct".to_string());
                     cfg.llm.api_key = std::env::var("OPENROUTER_API_KEY")
                         .ok()
                         .filter(|v| !v.is_empty());
@@ -286,9 +292,12 @@ impl AppConfig {
                         .unwrap_or_else(|_| "https://api.moonshot.cn".to_string());
                     cfg.llm.default_model =
                         std::env::var("KIMI_MODEL").unwrap_or_else(|_| "kimi-k2.6".to_string());
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
+                    cfg.llm.light_model = std::env::var("KIMI_LIGHT_MODEL")
+                        .unwrap_or_else(|_| "kimi-k2.5".to_string());
+                    cfg.llm.balanced_model = std::env::var("KIMI_BALANCED_MODEL")
+                        .unwrap_or_else(|_| "kimi-k2.6".to_string());
+                    cfg.llm.full_model = std::env::var("KIMI_FULL_MODEL")
+                        .unwrap_or_else(|_| "kimi-k2.6".to_string());
                     cfg.llm.api_key = std::env::var("KIMI_API_KEY").ok().filter(|v| !v.is_empty());
                     LlmProvider::Kimi
                 }
@@ -297,9 +306,12 @@ impl AppConfig {
                         .unwrap_or_else(|_| "https://open.bigmodel.cn".to_string());
                     cfg.llm.default_model =
                         std::env::var("GLM_MODEL").unwrap_or_else(|_| "glm-5.2".to_string());
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
+                    cfg.llm.light_model =
+                        std::env::var("GLM_LIGHT_MODEL").unwrap_or_else(|_| "glm-4.5".to_string());
+                    cfg.llm.balanced_model = std::env::var("GLM_BALANCED_MODEL")
+                        .unwrap_or_else(|_| "glm-5.2".to_string());
+                    cfg.llm.full_model =
+                        std::env::var("GLM_FULL_MODEL").unwrap_or_else(|_| "glm-5.2".to_string());
                     cfg.llm.api_key = std::env::var("GLM_API_KEY").ok().filter(|v| !v.is_empty());
                     LlmProvider::Glm
                 }
@@ -308,9 +320,12 @@ impl AppConfig {
                         .unwrap_or_else(|_| "https://api.lightning.ai".to_string());
                     cfg.llm.default_model = std::env::var("LIGHTNING_MODEL")
                         .unwrap_or_else(|_| "meta-llama/Llama-4-Maverick-17B".to_string());
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
+                    cfg.llm.light_model = std::env::var("LIGHTNING_LIGHT_MODEL")
+                        .unwrap_or_else(|_| "meta-llama/Llama-3.1-8B-Instruct".to_string());
+                    cfg.llm.balanced_model = std::env::var("LIGHTNING_BALANCED_MODEL")
+                        .unwrap_or_else(|_| "meta-llama/Llama-4-Maverick-17B".to_string());
+                    cfg.llm.full_model = std::env::var("LIGHTNING_FULL_MODEL")
+                        .unwrap_or_else(|_| "meta-llama/Llama-4-Maverick-17B".to_string());
                     cfg.llm.api_key = std::env::var("LIGHTNING_API_KEY")
                         .ok()
                         .filter(|v| !v.is_empty());
@@ -336,9 +351,6 @@ impl AppConfig {
             LlmProvider::Kimi => {
                 if let Ok(val) = std::env::var("KIMI_MODEL") {
                     cfg.llm.default_model = val;
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
                 }
                 if let Ok(val) = std::env::var("KIMI_API_KEY") {
                     cfg.llm.api_key = if val.is_empty() { None } else { Some(val) };
@@ -347,9 +359,6 @@ impl AppConfig {
             LlmProvider::Glm => {
                 if let Ok(val) = std::env::var("GLM_MODEL") {
                     cfg.llm.default_model = val;
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
                 }
                 if let Ok(val) = std::env::var("GLM_API_KEY") {
                     cfg.llm.api_key = if val.is_empty() { None } else { Some(val) };
@@ -359,18 +368,27 @@ impl AppConfig {
                 if let Ok(val) = std::env::var("OPENAI_API_KEY") {
                     cfg.llm.api_key = if val.is_empty() { None } else { Some(val) };
                 }
+                if cfg.llm.default_model == LlmConfig::default().default_model {
+                    cfg.llm.default_model = "gpt-4.1-mini".to_string();
+                    cfg.llm.light_model = "gpt-4.1-nano".to_string();
+                    cfg.llm.balanced_model = "gpt-4.1-mini".to_string();
+                    cfg.llm.full_model = "gpt-4.1".to_string();
+                }
             }
             LlmProvider::Anthropic => {
                 if let Ok(val) = std::env::var("ANTHROPIC_API_KEY") {
                     cfg.llm.api_key = if val.is_empty() { None } else { Some(val) };
                 }
+                if cfg.llm.default_model == LlmConfig::default().default_model {
+                    cfg.llm.default_model = "claude-3-5-haiku-20241022".to_string();
+                    cfg.llm.light_model = "claude-3-5-haiku-20241022".to_string();
+                    cfg.llm.balanced_model = "claude-3-5-sonnet-20241022".to_string();
+                    cfg.llm.full_model = "claude-3-5-sonnet-20241022".to_string();
+                }
             }
             LlmProvider::Groq => {
                 if let Ok(val) = std::env::var("GROQ_MODEL") {
                     cfg.llm.default_model = val;
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
                 }
                 if let Ok(val) = std::env::var("GROQ_API_KEY") {
                     cfg.llm.api_key = if val.is_empty() { None } else { Some(val) };
@@ -379,9 +397,6 @@ impl AppConfig {
             LlmProvider::OpenRouter => {
                 if let Ok(val) = std::env::var("OPENROUTER_MODEL") {
                     cfg.llm.default_model = val;
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
                 }
                 if let Ok(val) = std::env::var("OPENROUTER_API_KEY") {
                     cfg.llm.api_key = if val.is_empty() { None } else { Some(val) };
@@ -391,9 +406,6 @@ impl AppConfig {
             LlmProvider::Lightning => {
                 if let Ok(val) = std::env::var("LIGHTNING_MODEL") {
                     cfg.llm.default_model = val;
-                    cfg.llm.light_model = cfg.llm.default_model.clone();
-                    cfg.llm.balanced_model = cfg.llm.default_model.clone();
-                    cfg.llm.full_model = cfg.llm.default_model.clone();
                 }
                 if let Ok(val) = std::env::var("LIGHTNING_API_KEY") {
                     cfg.llm.api_key = if val.is_empty() { None } else { Some(val) };
@@ -423,6 +435,11 @@ impl AppConfig {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub fn test_default() -> Self {
+        Self::default()
+    }
+
     pub fn apply_preset(&mut self, preset: &str) {
         match preset {
             "lightweight" | "light" => {
@@ -445,6 +462,13 @@ impl AppConfig {
             }
             _ => {}
         }
+        // Keep tier model names distinct so that hosted/cloud providers
+        // actually get a different model per tier (issue #3). Without this,
+        // sync_tier_models() collapses every tier to default_model, making
+        // the preset effectively a no-op on Groq/OpenRouter/Kimi/etc.
+        self.tiers.light.model = self.llm.light_model.clone();
+        self.tiers.balanced.model = self.llm.balanced_model.clone();
+        self.tiers.full.model = self.llm.full_model.clone();
     }
 
     pub fn sync_tier_models(&mut self) {
@@ -453,5 +477,57 @@ impl AppConfig {
         self.tiers.balanced.model = model.clone();
         self.tiers.full.model = model;
         info!("Synced tier models to default: {}", self.llm.default_model);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_preset_keeps_distinct_tier_models_for_hosted_providers() {
+        // Simulate a Groq-style config where the env-var bootstrap set
+        // distinct light/balanced/full model names (issue #3).
+        let mut cfg = AppConfig::default();
+        cfg.llm.provider = LlmProvider::Groq;
+        cfg.llm.light_model = "llama-3.1-8b-instant".to_string();
+        cfg.llm.balanced_model = "llama-3.3-70b-versatile".to_string();
+        cfg.llm.full_model = "llama-3.3-70b-versatile".to_string();
+
+        cfg.apply_preset("balanced");
+
+        assert_eq!(cfg.llm.default_model, "llama-3.3-70b-versatile");
+        assert_eq!(cfg.tiers.light.model, "llama-3.1-8b-instant");
+        assert_eq!(cfg.tiers.balanced.model, "llama-3.3-70b-versatile");
+        assert_eq!(cfg.tiers.full.model, "llama-3.3-70b-versatile");
+
+        cfg.apply_preset("light");
+
+        assert_eq!(cfg.llm.default_model, "llama-3.1-8b-instant");
+        assert_eq!(cfg.tiers.light.model, "llama-3.1-8b-instant");
+        assert_eq!(cfg.tiers.balanced.model, "llama-3.3-70b-versatile");
+        assert_eq!(cfg.tiers.full.model, "llama-3.3-70b-versatile");
+    }
+
+    #[test]
+    fn apply_preset_resets_tier_models_after_sync_tier_models() {
+        // sync_tier_models() collapses everything to default_model; a
+        // subsequent apply_preset() must re-expand them (issue #3).
+        let mut cfg = AppConfig::default();
+        cfg.llm.provider = LlmProvider::OpenRouter;
+        cfg.llm.default_model = "meta-llama/llama-3.3-70b-instruct".to_string();
+        cfg.llm.light_model = "google/gemma-2-9b-it".to_string();
+        cfg.llm.balanced_model = "meta-llama/llama-3.3-70b-instruct".to_string();
+        cfg.llm.full_model = "meta-llama/llama-3.3-70b-instruct".to_string();
+        cfg.sync_tier_models();
+
+        cfg.apply_preset("light");
+
+        assert_eq!(cfg.tiers.light.model, "google/gemma-2-9b-it");
+        assert_eq!(
+            cfg.tiers.balanced.model,
+            "meta-llama/llama-3.3-70b-instruct"
+        );
+        assert_eq!(cfg.tiers.full.model, "meta-llama/llama-3.3-70b-instruct");
     }
 }

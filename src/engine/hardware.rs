@@ -277,4 +277,87 @@ mod tests {
             "clamped context must be strictly smaller than the requested one"
         );
     }
+
+    /// Simulate the documented 4 GB CPU-only target box and verify the
+    /// profile recommends the light tier (issue #5).
+    #[test]
+    fn detect_recommends_light_on_4gb_cpu_only() {
+        let saved_ram = std::env::var("ATSASSIN_RAM_GB").ok();
+        let saved_gpu = std::env::var("ATSASSIN_HAS_GPU").ok();
+        std::env::set_var("ATSASSIN_RAM_GB", "4");
+        std::env::set_var("ATSASSIN_HAS_GPU", "false");
+
+        let profile = HardwareProfile::detect();
+
+        match saved_ram {
+            Some(v) => std::env::set_var("ATSASSIN_RAM_GB", v),
+            None => std::env::remove_var("ATSASSIN_RAM_GB"),
+        }
+        match saved_gpu {
+            Some(v) => std::env::set_var("ATSASSIN_HAS_GPU", v),
+            None => std::env::remove_var("ATSASSIN_HAS_GPU"),
+        }
+
+        assert!(
+            !profile.has_gpu,
+            "simulated CPU-only box must report no GPU"
+        );
+        assert_eq!(profile.recommended_tier, "light");
+        assert_eq!(profile.total_ram_gb, 4);
+    }
+
+    /// A CPU-only machine should never be asked to run a Q6_K quant, even
+    /// if the requested tier nominally allows it.
+    #[test]
+    fn tier_for_hardware_downgrades_quantization_on_cpu_only() {
+        let saved_gpu = std::env::var("ATSASSIN_HAS_GPU").ok();
+        std::env::set_var("ATSASSIN_HAS_GPU", "false");
+        let profile = HardwareProfile::detect();
+        match saved_gpu {
+            Some(v) => std::env::set_var("ATSASSIN_HAS_GPU", v),
+            None => std::env::remove_var("ATSASSIN_HAS_GPU"),
+        }
+
+        let q6_tier = crate::config::ModelTier {
+            model: "qwen3.5:9b".into(),
+            quantization: "Q6_K".into(),
+            context_tokens: 8192,
+            cpu_ok: true,
+            cpu_threads: Some(6),
+            ram_min_gb: 8,
+            score_threshold: 0.7,
+            passes: 3,
+            recommended_batch: 32,
+        };
+        let adjusted = profile.tier_for_hardware(&q6_tier);
+        assert_eq!(
+            adjusted.quantization, "Q4_K_M",
+            "CPU-only boxes should downgrade Q6_K -> Q4_K_M"
+        );
+    }
+
+    /// Inference parameters on a CPU-only box should prefer smaller
+    /// batches and longer keep-alive to amortize model load cost.
+    #[test]
+    fn inference_params_are_cpu_appropriate() {
+        let saved_gpu = std::env::var("ATSASSIN_HAS_GPU").ok();
+        std::env::set_var("ATSASSIN_HAS_GPU", "false");
+        let profile = HardwareProfile::detect();
+        match saved_gpu {
+            Some(v) => std::env::set_var("ATSASSIN_HAS_GPU", v),
+            None => std::env::remove_var("ATSASSIN_HAS_GPU"),
+        }
+
+        let params = profile.inference_params();
+        assert!(!profile.has_gpu);
+        assert_eq!(params.batch_size, 64, "CPU batch size should be 64");
+        assert_eq!(
+            params.max_sequence_length, 128,
+            "CPU max sequence length should be 128"
+        );
+        assert_eq!(
+            params.keep_alive_secs, 1800,
+            "CPU keep-alive should be 30 min"
+        );
+    }
 }

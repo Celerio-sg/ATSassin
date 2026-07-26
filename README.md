@@ -61,6 +61,13 @@ cp .env.example .env
 | `atsassin market rates --role <title>` | Illustrative compensation benchmarks (same caveat) |
 | `atsassin tui` | Terminal dashboard - infer roles, scan, evaluate, and tailor without leaving it (`e`/`t`/`s`/`r`, `p` to toggle preference filter, `x` to sort by local relevance) |
 | `atsassin playbook` | Print the bundled APAC-focused playbook |
+| `atsassin apply --job-id <id> [--output <dir>]` | Write a bookmarklet + JS snippet that fills known application-form fields from a job's saved resume/cover letter. Never clicks submit — you always review and send the application yourself |
+| `atsassin companies discover --name <name> --domain <domain>` / `list` | Detect which ATS (Greenhouse/Lever/Ashby/Workday) a company's public careers page uses, and persist it so future `scan --boards companies` sweeps include it (issue #1) |
+| `atsassin outcomes connect --server <host> --username <user> --password <pw>` | Store IMAP credentials in the OS keychain. **Opt-in only** — nothing reads your mailbox unless you run this and `outcomes sync` yourself |
+| `atsassin outcomes sync --server <host> --username <user> [--password <pw>]` | Read ATS outcome emails (rejection/interview/offer) via IMAP and update matching pipeline entries. Off by default; requires `outcomes connect` first |
+| `atsassin compute status` | Show the Compute Broker's provider registry and cached self-reported quota. Recommends free/configured providers but never switches providers automatically |
+| `atsassin daemon [--interval <secs>] [--once]` | Optional background loop that reruns `scan` on a timer. Refuses to run on hardware below the `balanced` tier (recommends cron instead) — never resident on low-spec machines |
+| `atsassin telemetry archive [--days <n>]` | Compress telemetry rows older than N days into a separate cold zstd archive table, keeping the hot journal small |
 
 ## Compensation and market data disclaimer
 

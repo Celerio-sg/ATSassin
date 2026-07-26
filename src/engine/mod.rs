@@ -1,6 +1,8 @@
 pub mod ats_detector;
 pub mod benchmark;
+pub mod compute_broker;
 pub mod cost;
+pub mod daemon;
 pub mod deep_research;
 pub mod distillation;
 pub mod feedback;

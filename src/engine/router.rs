@@ -1,3 +1,4 @@
+use super::compute_broker::ComputeBroker;
 use super::cost::CostCalculator;
 use super::hardware::HardwareProfile;
 use super::llm::{LlmClient, LlmMessage, LlmRequest, LlmResponse};
@@ -18,6 +19,7 @@ pub struct ModelRouter {
     pub telemetry: Option<Arc<TelemetryLogger>>,
     pub cost_calc: CostCalculator,
     pub quality: Arc<QualityTracker>,
+    pub broker: Option<Arc<std::sync::Mutex<ComputeBroker>>>,
 }
 
 impl ModelRouter {
@@ -50,6 +52,11 @@ impl ModelRouter {
 
         let telemetry = telemetry_path.map(|p| Arc::new(TelemetryLogger::new(p)));
         let cost_calc = CostCalculator::new().with_provider(llm.provider.as_str());
+        let app_config = crate::config::AppConfig {
+            llm: llm.clone(),
+            ..Default::default()
+        };
+        let broker = ComputeBroker::from_config(&app_config);
 
         Self {
             llm_client: client,
@@ -64,6 +71,7 @@ impl ModelRouter {
             telemetry,
             cost_calc,
             quality: Arc::new(QualityTracker::new()),
+            broker: Some(Arc::new(std::sync::Mutex::new(broker))),
         }
     }
 
@@ -120,6 +128,17 @@ impl ModelRouter {
             .await;
 
         let latency = start.elapsed().as_millis();
+
+        if let Some(broker) = &self.broker {
+            if let Ok(mut broker) = broker.try_lock() {
+                if let Ok(resp) = &result {
+                    broker.observe_quota_from_headers(
+                        &self.llm_client.provider.to_string(),
+                        &resp.headers,
+                    );
+                }
+            }
+        }
 
         if let Some(ref telemetry) = self.telemetry {
             match &result {
@@ -179,8 +198,34 @@ impl ModelRouter {
     ) -> Result<LlmResponse> {
         let primary = self.llm_client.provider.to_string();
 
+        // Phase 1 Compute Broker: let the broker choose the best fallback
+        // provider based on observed quota and local-first policy. We only
+        // use a broker-recommended provider if it differs from the primary
+        // and from any already-tried provider.
+        let mut tried = std::collections::HashSet::new();
+        tried.insert(primary.clone());
+
+        if let Some(broker) = &self.broker {
+            let profile = broker
+                .lock()
+                .ok()
+                .and_then(|b| b.route_task(task, false).cloned());
+            if let Some(profile) = profile {
+                if profile.name != primary && !profile.allow_paid {
+                    tracing::info!("ComputeBroker selected fallback: {}", profile.name);
+                    tried.insert(profile.name.clone());
+                    if let Ok(resp) = self
+                        .chat_via_provider(messages.clone(), tier, task, &profile.name)
+                        .await
+                    {
+                        return Ok(resp);
+                    }
+                }
+            }
+        }
+
         for fallback in &self.fallback_chain {
-            if fallback == &primary {
+            if !tried.insert(fallback.clone()) {
                 continue;
             }
             tracing::warn!("Provider {} failed, trying fallback: {}", primary, fallback);
@@ -269,6 +314,14 @@ impl ModelRouter {
                     edit_distance: None,
                 };
                 let _ = telemetry.record_call(&call);
+            }
+        }
+
+        if let Some(broker) = &self.broker {
+            if let Ok(mut broker) = broker.try_lock() {
+                if let Ok(resp) = &result {
+                    broker.observe_quota_from_headers(provider, &resp.headers);
+                }
             }
         }
 
