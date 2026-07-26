@@ -33,7 +33,7 @@ tokio = { version = "1.45", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "blocking"] }
 
 # HTML parsing
-scraper = "0.20"
+scraper = "0.27"
 # Headless browser fallback
 fantoccini = "0.19"
 # PDF
