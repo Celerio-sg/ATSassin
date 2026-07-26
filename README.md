@@ -62,6 +62,10 @@ cp .env.example .env
 | `atsassin tui` | Terminal dashboard - infer roles, scan, evaluate, and tailor without leaving it (`e`/`t`/`s`/`r`, `p` to toggle preference filter, `x` to sort by local relevance) |
 | `atsassin playbook` | Print the bundled APAC-focused playbook |
 
+## Compensation and market data disclaimer
+
+Salary ranges, demand percentages, and other market figures surfaced by `atsassin market` are **illustrative and LLM-derived / statically estimated**. They are intended as directional guidance only. Always verify compensation against authoritative sources (pay-scale surveys, local labour data, recruiter conversations, and the specific offer in front of you) before negotiating or making decisions.
+
 ## Hardware Modes
 
 | Mode | Model | Context | CPU OK | Min RAM |
