@@ -43,6 +43,23 @@ pub enum ProfileInput {
     PortfolioUrl { url: String },
 }
 
+/// Look up a column index by (case-insensitive, whitespace-trimmed)
+/// header name in a CSV StringRecord. The LinkedIn export schema has
+/// shifted column ordering across rollouts (issue #15 - reading by column
+/// index `record.get(9)` historically silently dropped `Geo Location`
+/// whenever an upstream change put it elsewhere). Reading by name keeps
+/// the parser robust against those schema shifts, with no behaviour
+/// change for fields that stay put.
+fn header_index(headers: &csv::StringRecord, candidates: &[&str]) -> Option<usize> {
+    for (idx, h) in headers.iter().enumerate() {
+        let lower = h.trim().to_lowercase();
+        if candidates.iter().any(|c| lower == c.to_lowercase()) {
+            return Some(idx);
+        }
+    }
+    None
+}
+
 pub struct ProfileParser;
 
 impl ProfileParser {
@@ -109,31 +126,61 @@ impl ProfileParser {
             updated_at: Utc::now(),
         };
 
-        // Parse Profile.csv
+        // Parse Profile.csv — header-aware (LinkedIn has rearranged the
+        // column order across export-schema rollouts, so reading by column
+        // index historically silently dropped fields like `Geo Location`
+        // and `Email Address`. See GitHub issue #15 for the longer
+        // investigation; the fix is a single header lookup table applied to
+        // every field we care about.)
         let profile_csv = dir.join("Profile.csv");
         if profile_csv.exists() {
             let mut rdr = ReaderBuilder::new()
                 .has_headers(true)
                 .from_path(&profile_csv)?;
+            let headers = rdr.headers()?.clone();
+            let first_name_idx = header_index(&headers, &["first name"]);
+            let last_name_idx = header_index(&headers, &["last name"]);
+            let headline_idx = header_index(&headers, &["headline"]);
+            let summary_idx = header_index(&headers, &["summary"]);
+            let geo_idx = header_index(&headers, &["geo location", "location"]);
+
             for result in rdr.records() {
                 let record = result?;
-                if record.len() > 6 {
-                    profile.name = format!(
-                        "{} {}",
-                        record.get(0).unwrap_or(""),
-                        record.get(1).unwrap_or("")
-                    )
-                    .trim()
-                    .to_string();
-                    profile.location = record.get(9).map(|s| s.to_string());
-                    profile.summary = record.get(6).map(|s| s.to_string());
-                    profile.raw_text.push_str(&format!(
-                        "Name: {}\nHeadline: {}\nSummary: {}\n\n",
-                        profile.name,
-                        record.get(5).unwrap_or(""),
-                        profile.summary.as_deref().unwrap_or("")
-                    ));
+                let first = first_name_idx
+                    .and_then(|i| record.get(i))
+                    .unwrap_or("")
+                    .trim();
+                let last = last_name_idx
+                    .and_then(|i| record.get(i))
+                    .unwrap_or("")
+                    .trim();
+                let combined = format!("{} {}", first, last);
+                let combined = combined.trim();
+                if !combined.is_empty() {
+                    profile.name = combined.to_string();
                 }
+                if profile.location.is_none() {
+                    if let Some(idx) = geo_idx {
+                        let v = record.get(idx).unwrap_or("").trim();
+                        if !v.is_empty() {
+                            profile.location = Some(v.to_string());
+                        }
+                    }
+                }
+                if profile.summary.is_none() {
+                    if let Some(idx) = summary_idx {
+                        let v = record.get(idx).unwrap_or("").trim();
+                        if !v.is_empty() {
+                            profile.summary = Some(v.to_string());
+                        }
+                    }
+                }
+                profile.raw_text.push_str(&format!(
+                    "Name: {}\nHeadline: {}\nSummary: {}\n\n",
+                    profile.name,
+                    headline_idx.and_then(|i| record.get(i)).unwrap_or(""),
+                    profile.summary.as_deref().unwrap_or("")
+                ));
             }
         }
 
@@ -228,6 +275,72 @@ impl ProfileParser {
                         gpa: None,
                     });
                 }
+            }
+        }
+
+        // Read Email Addresses.csv — LinkedIn's export puts the primary
+        // contact address in a separate CSV (Profile.csv does not include
+        // it). Pick the `Confirmed=Yes` row when present; otherwise the
+        // first non-empty row. Header-aware, case-insensitive lookups so
+        // future schema renames keep working.
+        let email_csv = dir.join("Email Addresses.csv");
+        if email_csv.exists() {
+            let mut rdr = ReaderBuilder::new()
+                .has_headers(true)
+                .from_path(&email_csv)?;
+            let headers = rdr.headers()?.clone();
+            let email_idx = header_index(&headers, &["email address", "email"]);
+            let confirmed_idx = header_index(&headers, &["confirmed"]);
+            let mut first_candidate: Option<String> = None;
+            for result in rdr.records() {
+                let record = result?;
+                let Some(ei) = email_idx else { break };
+                let Some(raw) = record.get(ei) else { continue };
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let is_confirmed = confirmed_idx
+                    .and_then(|i| record.get(i))
+                    .map(|v| {
+                        v.trim().eq_ignore_ascii_case("yes")
+                            || v.trim().to_lowercase().contains("yes")
+                    })
+                    .unwrap_or(false);
+                if is_confirmed {
+                    profile.email = Some(trimmed.to_string());
+                    break;
+                }
+                if first_candidate.is_none() {
+                    first_candidate = Some(trimmed.to_string());
+                }
+            }
+            if profile.email.is_none() {
+                profile.email = first_candidate;
+            }
+        }
+
+        // Read PhoneNumbers.csv — same situation as Email Addresses.csv:
+        // Profile.csv never contains it, the export surfaces it as its own
+        // file, and the parser historically skipped it entirely. Take the
+        // first non-empty row.
+        let phone_csv = dir.join("PhoneNumbers.csv");
+        if phone_csv.exists() {
+            let mut rdr = ReaderBuilder::new()
+                .has_headers(true)
+                .from_path(&phone_csv)?;
+            let headers = rdr.headers()?.clone();
+            let number_idx = header_index(&headers, &["number", "phone", "phone number"]);
+            for result in rdr.records() {
+                let record = result?;
+                let Some(ni) = number_idx else { break };
+                let Some(raw) = record.get(ni) else { continue };
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                profile.phone = Some(trimmed.to_string());
+                break;
             }
         }
 
@@ -518,5 +631,166 @@ impl ProfileParser {
         } else {
             SkillCategory::Tool
         }
+    }
+}
+
+/// Looks up a column index by one or more candidate header names, in
+/// order, returning the first match. Exposed for unit-test use.
+#[allow(dead_code)]
+fn header_index_for(headers: &csv::StringRecord, candidates: &[&str]) -> Option<usize> {
+    header_index(headers, candidates)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn write_csv(dir: &std::path::Path, name: &str, body: &str) {
+        fs::write(dir.join(name), body).unwrap();
+    }
+
+    #[test]
+    fn header_index_picks_first_candidate_case_insensitively() {
+        let headers = csv::StringRecord::from(vec![
+            "First Name",
+            "Last Name",
+            "Headline",
+            "Summary",
+            "Geo Location",
+        ]);
+        assert_eq!(
+            header_index_for(&headers, &["geo location", "location"]),
+            Some(4)
+        );
+        assert_eq!(header_index_for(&headers, &["first name"]), Some(0));
+        assert_eq!(header_index_for(&headers, &["nonexistent"]), None);
+    }
+
+    #[test]
+    fn parse_linkedin_export_picks_location_summary_by_header() {
+        let tmp = tempdir().unwrap();
+        let exp = tmp.path();
+        write_csv(
+            exp,
+            "Profile.csv",
+            "First Name,Last Name,Headline,Summary,Geo Location\n\
+             Simon,Brender,APAC GM at X,15+ yrs SaaS leadership.,Singapore\n",
+        );
+        write_csv(exp, "Skills.csv", "OpenAI Products\n");
+        write_csv(
+            exp,
+            "Positions.csv",
+            "Company Name,Title,Description,Location,Started On,Finished On\n\
+             Foo,GM,duties,singapore,Jan 2020,\n",
+        );
+
+        let profile = ProfileParser::parse(ProfileInput::LinkedInExport {
+            path: exp.to_path_buf(),
+        })
+        .unwrap();
+
+        assert_eq!(profile.name, "Simon Brender");
+        assert_eq!(profile.location.as_deref(), Some("Singapore"));
+        assert!(profile.summary.as_deref().unwrap_or("").contains("SaaS"));
+        assert_eq!(profile.skills.len(), 1);
+        assert_eq!(profile.experience.len(), 1);
+    }
+
+    #[test]
+    fn parse_linkedin_export_picks_confirmed_email_address_first() {
+        let tmp = tempdir().unwrap();
+        let exp = tmp.path();
+        write_csv(exp, "Profile.csv", "First Name,Last Name\nSimon,Brender\n");
+        write_csv(
+            exp,
+            "Email Addresses.csv",
+            "Email Address,Confirmed\n\
+             unconfirmed@example.com,No\n\
+             real@example.com,Yes\n\
+             never-seen@example.com,No\n",
+        );
+
+        let profile = ProfileParser::parse(ProfileInput::LinkedInExport {
+            path: exp.to_path_buf(),
+        })
+        .unwrap();
+
+        assert_eq!(profile.email.as_deref(), Some("real@example.com"));
+    }
+
+    #[test]
+    fn parse_linkedin_export_falls_back_to_first_email_when_none_confirmed() {
+        let tmp = tempdir().unwrap();
+        let exp = tmp.path();
+        write_csv(exp, "Profile.csv", "First Name,Last Name\nSimon,Brender\n");
+        write_csv(
+            exp,
+            "Email Addresses.csv",
+            "Email Address,Confirmed\nsimon.brender@celerio.sg,No\n",
+        );
+
+        let profile = ProfileParser::parse(ProfileInput::LinkedInExport {
+            path: exp.to_path_buf(),
+        })
+        .unwrap();
+
+        assert_eq!(profile.email.as_deref(), Some("simon.brender@celerio.sg"));
+    }
+
+    #[test]
+    fn parse_linkedin_export_reads_phone_numbers_csv_first_row() {
+        let tmp = tempdir().unwrap();
+        let exp = tmp.path();
+        write_csv(exp, "Profile.csv", "First Name,Last Name\nSimon,Brender\n");
+        write_csv(
+            exp,
+            "PhoneNumbers.csv",
+            "Number,Type\n+65 9123 4567,mobile\n",
+        );
+
+        let profile = ProfileParser::parse(ProfileInput::LinkedInExport {
+            path: exp.to_path_buf(),
+        })
+        .unwrap();
+
+        assert_eq!(profile.phone.as_deref(), Some("+65 9123 4567"));
+    }
+
+    #[test]
+    fn parse_linkedin_export_empty_export_returns_default_name_and_no_identity() {
+        let tmp = tempdir().unwrap();
+        let exp = tmp.path();
+        let profile = ProfileParser::parse(ProfileInput::LinkedInExport {
+            path: exp.to_path_buf(),
+        })
+        .unwrap();
+
+        assert_eq!(profile.name, "LinkedIn User");
+        assert!(profile.email.is_none());
+        assert!(profile.location.is_none());
+        assert!(profile.phone.is_none());
+    }
+
+    #[test]
+    fn parse_linkedin_export_handles_missing_geo_location_column() {
+        // Even if LinkedIn renames "Geo Location" away in a future
+        // rollout, the parser now reports an honest None rather than
+        // fabricating one from a positional index.
+        let tmp = tempdir().unwrap();
+        let exp = tmp.path();
+        write_csv(
+            exp,
+            "Profile.csv",
+            "First Name,Last Name,Headline,Summary\nSimon,Brender,H,15+ yrs\n",
+        );
+
+        let profile = ProfileParser::parse(ProfileInput::LinkedInExport {
+            path: exp.to_path_buf(),
+        })
+        .unwrap();
+
+        assert_eq!(profile.location, None);
     }
 }

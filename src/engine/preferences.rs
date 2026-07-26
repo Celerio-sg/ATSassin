@@ -94,12 +94,12 @@ pub fn check<'a>(facts: impl Into<JobFacts<'a>>, prefs: &JobPreferences) -> Pref
     match prefs.work_mode {
         WorkModePref::Any => {}
         WorkModePref::RemoteOnly => {
-            if !job.remote && !mentions(&job, &["remote", "work from home", "wfh"]) {
+            if !job.remote && !mentions(&job, REMOTE_ONLY_TOKENS) {
                 reasons.push("no remote signal found (location/description)".to_string());
             }
         }
         WorkModePref::HybridOrRemote => {
-            if !job.remote && !mentions(&job, &["remote", "hybrid", "work from home"]) {
+            if !job.remote && !mentions(&job, HYBRID_OR_REMOTE_TOKENS) {
                 reasons.push("no remote/hybrid signal found".to_string());
             }
         }
@@ -111,6 +111,77 @@ pub fn check<'a>(facts: impl Into<JobFacts<'a>>, prefs: &JobPreferences) -> Pref
         reasons,
     }
 }
+
+/// Token sets for the work-mode matcher. The previous version only knew
+/// English "remote"/"wfh"/"hybrid" - which silently rejected APAC postings
+/// that use "Hybrid (Singapore)", "Telecommuting ok", "WFH-friendly",
+/// "Smart working", and the like. See GitHub issue #12 for the longer
+/// investigation; the fix is to expand the lists with the variants that
+/// actually show up in real postings outside the UK/US, while keeping the
+/// English tokens so prior behaviour is preserved.
+///
+/// `RemoteOnly` keeps stricter - the goal is "remote-acceptable" rather
+/// than "anywhere-flexible". `HybridOrRemote` accepts everything
+/// `RemoteOnly` accepts, plus the words that mean "some-days-office".
+const REMOTE_ONLY_TOKENS: &[&str] = &[
+    "remote",
+    "work from home",
+    "wfh",
+    "work from anywhere",
+    "wfa",
+    "telecommuting",
+    "telecommute",
+    "telework",
+    "100% remote",
+    "fully remote",
+    "remote-first",
+    "remote first",
+    "remote friendly",
+    "remote-friendly",
+    "home based",
+    "home-based",
+    "anywhere in",
+    "smart working",
+    "在家办公", // 在家办公 — Chinese "WFH"
+    "リモート", // リモート — Japanese "remote"
+    "在宅",     // 在宅 — Japanese "telecommuting"
+];
+
+const HYBRID_OR_REMOTE_TOKENS: &[&str] = &[
+    "remote",
+    "hybrid",
+    "work from home",
+    "wfh",
+    "work from anywhere",
+    "wfa",
+    "telecommuting",
+    "telecommute",
+    "telework",
+    "100% remote",
+    "fully remote",
+    "remote-first",
+    "remote first",
+    "remote friendly",
+    "remote-friendly",
+    "home based",
+    "home-based",
+    "anywhere in",
+    "smart working",
+    "flex work",
+    "flexible work",
+    "flexible work arrangement",
+    "hybrid (",
+    "office meetups",
+    "some days in office",
+    "days in office",
+    "days office",
+    "office per week",
+    "days a week in office",
+    "ハイブリッド", // ハイブリッド — Japanese "hybrid"
+    "在家办公",
+    "リモート",
+    "在宅",
+];
 
 fn mentions(job: &JobFacts, needles: &[&str]) -> bool {
     let haystack = format!("{} {} {}", job.title, job.location, job.description).to_lowercase();
@@ -257,6 +328,70 @@ mod tests {
             false,
             "Engineer",
             "New York, NY",
+        );
+        let prefs = JobPreferences {
+            work_mode: WorkModePref::RemoteOnly,
+            ..Default::default()
+        };
+        assert!(!check(&j, &prefs).matches);
+    }
+
+    #[test]
+    fn remote_only_accepts_telecommuting_wfa_smart_working() {
+        // Issue #12 - APAC and AU/EU postings routinely use these
+        // variants instead of the literal English word "remote".
+        for phrase in [
+            "Telecommuting ok",
+            "WFH / WFA friendly",
+            "Work from anywhere",
+            "Home-based role",
+            "Smart Working arrangement",
+            "在家办公",
+            "リモート",
+        ] {
+            let j = job(None, phrase, false, "Engineer", "Singapore");
+            let prefs = JobPreferences {
+                work_mode: WorkModePref::RemoteOnly,
+                ..Default::default()
+            };
+            assert!(
+                check(&j, &prefs).matches,
+                "expected RemoteOnly to accept description containing {phrase:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn hybrid_or_remote_accepts_smart_working_flex_work() {
+        for phrase in [
+            "Hybrid (Singapore)",
+            "Smart Working - 2 days in office",
+            "Flexible work arrangement with monthly office visits",
+            "Up to 2 days office per week",
+            "ハイブリッド",
+        ] {
+            let j = job(None, phrase, false, "Engineer", "Tokyo");
+            let prefs = JobPreferences {
+                work_mode: WorkModePref::HybridOrRemote,
+                ..Default::default()
+            };
+            assert!(
+                check(&j, &prefs).matches,
+                "expected HybridOrRemote to accept description containing {phrase:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn remote_only_still_rejects_flex_only_phrasings() {
+        // RemoteOnly is stricter than HybridOrRemote - flex/hybrid-without-
+        // any-remote-signal should not pass under RemoteOnly.
+        let j = job(
+            None,
+            "Mostly office but contact days a week from home",
+            false,
+            "Engineer",
+            "Singapore",
         );
         let prefs = JobPreferences {
             work_mode: WorkModePref::RemoteOnly,

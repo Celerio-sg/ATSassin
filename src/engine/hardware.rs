@@ -235,3 +235,46 @@ impl InferenceParams {
         delta <= threshold
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Issue #5 - the "works on any hardware" claim is documented in the
+    /// README, and `tier_for_hardware` is the line of code that makes it
+    /// true on a 4GB-RAM CPU-only box (which a reviewer won't normally
+    /// have on hand, hence the test). When a user runs on that hardware,
+    /// `tier_for_hardware` shrinks the requested `context_tokens` to 4096
+    /// so a tier that would otherwise OOM fits.
+    #[test]
+    fn tier_for_hardware_clamps_context_on_small_ram_boxes() {
+        let saved_ram = std::env::var("ATSASSIN_RAM_GB").ok();
+        std::env::set_var("ATSASSIN_RAM_GB", "4");
+        let profile = HardwareProfile::detect();
+        match saved_ram {
+            Some(v) => std::env::set_var("ATSASSIN_RAM_GB", v),
+            None => std::env::remove_var("ATSASSIN_RAM_GB"),
+        }
+
+        let demanding_tier = crate::config::ModelTier {
+            model: "qwen3.5:32b".into(),
+            quantization: "Q8_0".into(),
+            context_tokens: 32768,
+            cpu_ok: false,
+            cpu_threads: Some(8),
+            ram_min_gb: 32, // 4 GB available << 32 GB requested -> clamp
+            score_threshold: 0.7,
+            passes: 3,
+            recommended_batch: 4,
+        };
+        let clamped = profile.tier_for_hardware(&demanding_tier);
+        assert_eq!(
+            clamped.context_tokens, 4096,
+            "issue #5: tier_for_hardware must clamp long ctx down for low-RAM boxes rather than crashing the LLM"
+        );
+        assert!(
+            clamped.context_tokens < demanding_tier.context_tokens,
+            "clamped context must be strictly smaller than the requested one"
+        );
+    }
+}

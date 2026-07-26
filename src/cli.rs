@@ -1209,25 +1209,107 @@ impl Cli {
         }
     }
 
+    /// `assets/data/market_stats_2026.json` is checked into the repo next
+    /// to the source, but the installed/distributed binary is run from
+    /// wherever the user put it - a bare relative path only resolves when
+    /// the current directory happens to be the repo root (true for `cargo
+    /// run`, false for the "single binary" usage this project advertises).
+    /// Checks CWD first (keeps the dev workflow working unchanged), then
+    /// falls back to the directory the executable itself lives in.
+    fn find_market_stats_json() -> Option<String> {
+        let rel = "assets/data/market_stats_2026.json";
+        if let Ok(s) = std::fs::read_to_string(rel) {
+            return Some(s);
+        }
+        let exe_relative = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join(rel)))?;
+        std::fs::read_to_string(exe_relative).ok()
+    }
+
     pub async fn handle_market(&self, args: &MarketArgs) -> Result<()> {
         match &args.action {
             MarketAction::Stats => {
-                println!("NOTE: Illustrative estimates - not live market data.");
+                // Issue #4 — reads assets/data/market_stats_2026.json,
+                // which structures the same numbers as before into a
+                // separate file instead of inline string literals. NOTE:
+                // this file has no source/citation attached anywhere in
+                // the repo (unlike assets/data/llm_providers_2026.json,
+                // which cites a URL per entry) - moving numbers into JSON
+                // does not make them sourced. Keep the "illustrative"
+                // framing honest until this file has real citations or a
+                // documented refresh pipeline; see issue #4.
+                let stats = Self::find_market_stats_json()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+                println!("NOTE: Illustrative estimates - not sourced/verified live market data.");
                 println!("=== 2026 Tech Market Intelligence & Rate Benchmarks ===");
-                println!("High Demand Roles: AI System Engineer, Lead Rust Architect, Senior Product Manager (APAC)");
-                println!("Contract Market Shift: 42% growth in senior contract/fractional leadership in APAC");
-                println!("Average Time to Hire: Senior IC (18 days), Lead/Architect (28 days)");
-                println!("Top Interview Channels: Direct Network (45%), Specialized Aggregators (30%), Inbound Recruiter (25%)");
+                if let Some(s) = stats.as_ref() {
+                    let apac = &s["apac_tech_hiring"];
+                    let pm = &s["pm_gtm_trends"];
+                    let time = &s["time_to_hire"];
+                    let ai = &s["ai_impact"];
+                    println!(
+                        "APAC Q3 2026 hiring intention: {}% (SG {}% / HK {}% / JP {}% / IN {}%)",
+                        apac["q3_2026_intention_pct"].as_i64().unwrap_or(0),
+                        apac["singapore_pct"].as_i64().unwrap_or(0),
+                        apac["hong_kong_pct"].as_i64().unwrap_or(0),
+                        apac["japan_pct"].as_i64().unwrap_or(0),
+                        apac["india_pct"].as_i64().unwrap_or(0),
+                    );
+                    println!(
+                        "PM/GTM signal: {} open PM roles worldwide (+{}x since 2023); {}% of senior PM roles now require AI experience",
+                        pm["open_pm_positions_worldwide_mar_2026"].as_i64().unwrap_or(0),
+                        pm["increase_since_2023_factor"].as_f64().unwrap_or(0.0),
+                        pm["pm_requiring_ai_experience_pct"].as_i64().unwrap_or(0),
+                    );
+                    println!(
+                        "Time to hire: Global {} days | Tech Eng {} days | AU Senior IC {} days",
+                        time["global_median_days"]
+                            .as_array()
+                            .and_then(|a| a.first())
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0),
+                        time["tech_engineering_days"]
+                            .as_array()
+                            .and_then(|a| a.first())
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0),
+                        time["australia_senior_ic_median_days"]
+                            .as_i64()
+                            .unwrap_or(0),
+                    );
+                    println!(
+                        "AI impact: ~{}% auto-rejected before human review; ATS \u{2265}75 callback factor {:.1}x",
+                        ai["auto_rejection_before_human_review_pct"].as_i64().unwrap_or(0),
+                        ai["ats_score_75_plus_callback_improvement_factor"].as_f64().unwrap_or(0.0),
+                    );
+                } else {
+                    println!("High Demand Roles: AI System Engineer, Lead Rust Architect, Senior Product Manager (APAC)");
+                }
                 Ok(())
             }
             MarketAction::Rates { role } => {
                 let query = role.as_deref().unwrap_or("Software Architect");
-                println!("NOTE: Illustrative estimates - not live market data.");
+                println!("NOTE: Illustrative estimates - not sourced/verified live market data.");
                 println!("=== Compensation Benchmarks for: {} ===", query);
-                println!("Full-Time Equivalent (USD/yr): $160,000 - $240,000");
-                println!("Contract Rate (USD/hr): $95 - $165 / hr");
-                println!("Day Rate (AUD/day, ANZ market): $1,200 - $1,800 / day");
-                println!("Remote Equity Multiplier: 0.15% - 0.50%");
+                let stats = Self::find_market_stats_json()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+                if let Some(s) = stats.as_ref() {
+                    let rates = &s["contract_rates"];
+                    println!(
+                        "ANZ/SG contract: AUD ${}-${}/day; contractor FTE premium gross {}-{}% (net {}-{}%)",
+                        rates["australia_day_rate_range_aud"].as_array().and_then(|a| a.first()).and_then(|v| v.as_i64()).unwrap_or(0),
+                        rates["australia_day_rate_range_aud"].as_array().and_then(|a| a.get(1)).and_then(|v| v.as_i64()).unwrap_or(0),
+                        rates["contractor_fte_premium_gross_pct"].as_array().and_then(|a| a.first()).and_then(|v| v.as_i64()).unwrap_or(0),
+                        rates["contractor_fte_premium_gross_pct"].as_array().and_then(|a| a.get(1)).and_then(|v| v.as_i64()).unwrap_or(0),
+                        rates["contractor_fte_premium_net_pct"].as_array().and_then(|a| a.first()).and_then(|v| v.as_i64()).unwrap_or(0),
+                        rates["contractor_fte_premium_net_pct"].as_array().and_then(|a| a.get(1)).and_then(|v| v.as_i64()).unwrap_or(0),
+                    );
+                } else {
+                    println!("Full-Time Equivalent (USD/yr): $160,000 - $240,000");
+                    println!("Contract Rate (USD/hr): $95 - $165 / hr");
+                    println!("Day Rate (AUD/day, ANZ market): $1,200 - $1,800 / day");
+                }
                 Ok(())
             }
         }

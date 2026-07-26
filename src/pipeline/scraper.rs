@@ -69,7 +69,12 @@ impl Scraper {
                 .scrape_linkedin(query, limit, location)
                 .await
                 .unwrap_or_default(),
-            "seek" => self.scrape_seek(query, limit).await.unwrap_or_default(),
+            b if b == "seek" || b.starts_with("seek:") => {
+                let region = parse_seek_region(board);
+                self.scrape_seek_for_region(query, limit, region)
+                    .await
+                    .unwrap_or_default()
+            }
             "indeed" => self.scrape_indeed(query, limit).await.unwrap_or_default(),
             "glassdoor" => self
                 .scrape_glassdoor(query, limit)
@@ -145,7 +150,13 @@ impl Scraper {
 
         // Only the real job-board scrapers get a headless/MCP-browser retry — social
         // aggregators already hit real APIs directly and have nothing to retry.
-        if jobs.is_empty() && matches!(board, "linkedin" | "seek" | "indeed" | "glassdoor") {
+        if jobs.is_empty()
+            && (board == "linkedin"
+                || board == "seek"
+                || board.starts_with("seek:")
+                || board == "indeed"
+                || board == "glassdoor")
+        {
             debug!(
                 "Primary scraper returned 0 jobs for board: {}, trying headless/MCP fallback",
                 board
@@ -353,17 +364,29 @@ impl Scraper {
     }
 
     /// Seek's public SPA JSON search API. Undocumented and can change; any
-    /// parse failure degrades to an empty result.
-    async fn scrape_seek(&self, query: &str, limit: usize) -> Result<Vec<JobSummary>> {
+    /// parse failure degrades to an empty result. The same chalice-search
+    /// endpoint serves every Seek market behind a different `siteKey`;
+    /// issue #13 parameterises it via `seek:<region>` board names (dispatch
+    /// lives in `scrape_board_at`) so an SG/HK/NZ candidate routes to the
+    /// right market instead of always getting zero jobs from the AU-only
+    /// default.
+    async fn scrape_seek_for_region(
+        &self,
+        query: &str,
+        limit: usize,
+        region: SeekRegion,
+    ) -> Result<Vec<JobSummary>> {
         let client = reqwest::Client::builder()
             .user_agent(BROWSER_USER_AGENT)
             .timeout(std::time::Duration::from_secs(10))
             .build()?;
 
         let url = format!(
-            "https://www.seek.com.au/api/chalice-search/v4/search?siteKey=AU-Main&keywords={}&pageSize={}",
+            "https://www.seek.{}/api/chalice-search/v4/search?siteKey={}&keywords={}&pageSize={}",
+            region.tld(),
+            region.site_key(),
             urlencoding::encode(query),
-            limit
+            limit,
         );
 
         let resp = client
@@ -429,7 +452,7 @@ impl Scraper {
                 title,
                 company,
                 location,
-                url: format!("https://www.seek.com.au/job/{}", id),
+                url: format!("https://www.seek.{}/job/{}", region.tld(), id),
                 posted_at: Some(Utc::now()),
                 snippet: "SEEK job posting".to_string(),
                 description,
@@ -695,21 +718,22 @@ impl Scraper {
     /// sweep, every company is fetched in parallel, so wall-clock time is
     /// bounded by the slowest single request rather than N x latency.
     async fn scrape_companies(&self, query: &str, limit: usize) -> Result<Vec<JobSummary>> {
-        use crate::pipeline::company_directory::GREENHOUSE_COMPANIES;
+        use crate::pipeline::company_directory::all_greenhouse_companies;
         let start = std::time::Instant::now();
 
         // Every one of these companies is hosted on the same
-        // boards-api.greenhouse.io host, so firing all ~36 requests at once
-        // (as this used to do) hammers a single host rather than spreading
-        // load - real job boards rate-limit quickly, and several answer an
-        // over-limit request with a 200 and an empty body instead of a 429,
-        // which reads as "zero jobs" rather than "throttled". Capping
-        // in-flight requests to this host keeps the sweep polite and keeps
-        // empty results honest.
-        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
+        // boards-api.greenhouse.io host, so firing all requests at once
+        // hammers a single host rather than spreading load. Capping
+        // in-flight requests *per host* (issue #7) lets a slow / rate-
+        // limited host stay within its own budget rather than starving
+        // requests to other hosts when we eventually fan out to Lever /
+        // Ashby alongside Greenhouse.
+        let sweep_targets = all_greenhouse_companies();
+        let host = "boards-api.greenhouse.io";
+        let semaphore = host_semaphore(host, 6);
 
-        let mut handles = Vec::with_capacity(GREENHOUSE_COMPANIES.len());
-        for (_name, slug) in GREENHOUSE_COMPANIES {
+        let mut handles = Vec::with_capacity(sweep_targets.len());
+        for (_name, slug) in &sweep_targets {
             let scraper = self.clone();
             let slug = slug.to_string();
             let query = query.to_string();
@@ -740,7 +764,7 @@ impl Scraper {
         // transparency of the indeed/glassdoor honest-failure warnings.
         eprintln!(
             "companies: swept {} real company job boards directly (zero LLM tokens) in {:.1}s - {} had roles matching \"{}\"",
-            GREENHOUSE_COMPANIES.len(),
+            sweep_targets.len(),
             start.elapsed().as_secs_f64(),
             companies_with_matches,
             query,
@@ -853,10 +877,30 @@ impl Scraper {
                 "https://www.linkedin.com/jobs/search/?keywords={}",
                 urlencoding::encode(query)
             ),
-            "seek" => format!(
-                "https://www.seek.com.au/jobs?keywords={}",
-                urlencoding::encode(query)
-            ),
+            b if b == "seek" || b == "seek:au" => {
+                format!(
+                    "https://www.seek.com.au/jobs?keywords={}",
+                    urlencoding::encode(query)
+                )
+            }
+            "seek:nz" => {
+                format!(
+                    "https://www.seek.co.nz/jobs?keywords={}",
+                    urlencoding::encode(query)
+                )
+            }
+            "seek:sg" => {
+                format!(
+                    "https://www.seek.com.sg/jobs?keywords={}",
+                    urlencoding::encode(query)
+                )
+            }
+            "seek:hk" => {
+                format!(
+                    "https://www.seek.com.hk/jobs?keywords={}",
+                    urlencoding::encode(query)
+                )
+            }
             "indeed" => format!(
                 "https://au.indeed.com/jobs?q={}",
                 urlencoding::encode(query)
@@ -947,6 +991,74 @@ impl Scraper {
 
         client.close().await?;
         Ok(jobs)
+    }
+}
+
+/// Per-host concurrency cap used by `scrape_companies`. The single-
+/// Greenhouse sweep originally used one global semaphore; issue #7
+/// generalises it so that once Lever / Ashby boards start fanning out
+/// alongside Greenhouse, each *host* gets its own limit rather than one
+/// global cap. Keyed by host string in a process-wide
+/// `OnceLock<Mutex<HashMap<...>>>`, so askers get back the same `Arc`
+/// per `host`. Arc clone is atomic-refcount only; the underlying
+/// `Semaphore` allocation runs at most once per host per process.
+fn host_semaphore(host: &str, cap: usize) -> std::sync::Arc<tokio::sync::Semaphore> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static REGISTRY: OnceLock<Mutex<HashMap<String, std::sync::Arc<tokio::sync::Semaphore>>>> =
+        OnceLock::new();
+    let mut registry = REGISTRY
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("host_semaphore registry mutex poisoned");
+    registry
+        .entry(host.to_string())
+        .or_insert_with(|| std::sync::Arc::new(tokio::sync::Semaphore::new(cap)))
+        .clone()
+}
+
+/// What Seek market a board name maps to. The chalice-search endpoint is
+/// the same across regions; only `siteKey` and TLD differ. Adding a new
+/// market means adding an arm here plus a new `seek:<region>` accept-arm
+/// in the dispatch - kept narrow so each new region is a one-line change.
+#[derive(Debug, Clone, Copy)]
+enum SeekRegion {
+    Au,
+    Nz,
+    Sg,
+    Hk,
+}
+
+impl SeekRegion {
+    fn tld(self) -> &'static str {
+        match self {
+            SeekRegion::Au => "com.au",
+            SeekRegion::Nz => "co.nz",
+            SeekRegion::Sg => "com.sg",
+            SeekRegion::Hk => "com.hk",
+        }
+    }
+
+    fn site_key(self) -> &'static str {
+        match self {
+            SeekRegion::Au => "AU-Main",
+            SeekRegion::Nz => "NZ-Main",
+            SeekRegion::Sg => "SG-Main",
+            SeekRegion::Hk => "HK-Main",
+        }
+    }
+}
+
+/// Map a scrubber board arg to a Seek region. Unknown suffixes fall back
+/// to AU rather than erroring - a malformed board string never blocks a
+/// whole scan, it just routes to the well-tested code path.
+fn parse_seek_region(board: &str) -> SeekRegion {
+    match board {
+        "seek" | "seek:au" => SeekRegion::Au,
+        "seek:nz" => SeekRegion::Nz,
+        "seek:sg" => SeekRegion::Sg,
+        "seek:hk" => SeekRegion::Hk,
+        _ => SeekRegion::Au,
     }
 }
 
@@ -1045,5 +1157,38 @@ mod tests {
     fn returns_none_without_any_jsonld() {
         let html = "<html><head></head><body>No structured data here</body></html>";
         assert_eq!(extract_jsonld_description(html), None);
+    }
+
+    #[test]
+    fn parse_seek_region_default_and_suffixes() {
+        assert!(matches!(parse_seek_region("seek"), SeekRegion::Au));
+        assert!(matches!(parse_seek_region("seek:au"), SeekRegion::Au));
+        assert!(matches!(parse_seek_region("seek:nz"), SeekRegion::Nz));
+        assert!(matches!(parse_seek_region("seek:sg"), SeekRegion::Sg));
+        assert!(matches!(parse_seek_region("seek:hk"), SeekRegion::Hk));
+        // Unknown suffixes degrade cleanly to AU rather than crashing.
+        assert!(matches!(parse_seek_region("seek:xx"), SeekRegion::Au));
+    }
+
+    #[test]
+    fn seek_region_endpoints_are_stable() {
+        assert_eq!(SeekRegion::Au.tld(), "com.au");
+        assert_eq!(SeekRegion::Nz.tld(), "co.nz");
+        assert_eq!(SeekRegion::Sg.tld(), "com.sg");
+        assert_eq!(SeekRegion::Hk.tld(), "com.hk");
+        assert_eq!(SeekRegion::Au.site_key(), "AU-Main");
+        assert_eq!(SeekRegion::Nz.site_key(), "NZ-Main");
+        assert_eq!(SeekRegion::Sg.site_key(), "SG-Main");
+        assert_eq!(SeekRegion::Hk.site_key(), "HK-Main");
+    }
+
+    #[test]
+    fn host_semaphore_returns_same_arc_for_same_host() {
+        let probe = "test-host-semaphore-only.example";
+        let a = host_semaphore(probe, 6);
+        let b = host_semaphore(probe, 6);
+        assert!(std::sync::Arc::ptr_eq(&a, &b));
+        let c = host_semaphore("other-host-semaphore-only.example", 6);
+        assert!(!std::sync::Arc::ptr_eq(&a, &c));
     }
 }

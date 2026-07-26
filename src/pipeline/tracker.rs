@@ -15,6 +15,11 @@ use crate::models::role::{
 
 pub struct PipelineTracker {
     conn: Mutex<Connection>,
+    // Kept around so the calibration hook in `log_status_to_feedback`
+    // (issue #10) can hand the same db path to `FeedbackTracker::new`
+    // without re-deriving it from env. Issue #10 didn't store this
+    // before, which is what caused the build to fail.
+    db_path: std::path::PathBuf,
 }
 
 impl PipelineTracker {
@@ -22,6 +27,7 @@ impl PipelineTracker {
         let conn = Connection::open(db_path).context("Failed to open SQLite database")?;
         let tracker = Self {
             conn: Mutex::new(conn),
+            db_path: db_path.to_path_buf(),
         };
         tracker.init_schema()?;
         Ok(tracker)
@@ -246,27 +252,77 @@ impl PipelineTracker {
         contact: Option<&str>,
         follow_up_date: Option<DateTime<Utc>>,
     ) -> Result<usize> {
-        let conn = self.conn.lock().unwrap();
-        let status_json = status.map(|s| serde_json::to_string(&s).unwrap_or_default());
-        let follow_up_str = follow_up_date.map(|d| d.to_rfc3339());
-        let rows_affected = conn.execute(
-            "UPDATE pipeline SET
-                status = COALESCE(?1, status),
-                notes = COALESCE(?2, notes),
-                contact = COALESCE(?3, contact),
-                follow_up_date = COALESCE(?4, follow_up_date),
-                updated_at = ?5
-             WHERE job_id = ?6",
-            params![
-                status_json,
-                notes,
-                contact,
-                follow_up_str,
-                Utc::now().to_rfc3339(),
-                job_id
-            ],
-        )?;
+        let (rows_affected, status_to_log) = {
+            let conn = self.conn.lock().unwrap();
+            let status_json = status
+                .as_ref()
+                .map(|s| serde_json::to_string(s).unwrap_or_default());
+            let follow_up_str = follow_up_date.map(|d| d.to_rfc3339());
+            let rows = conn.execute(
+                "UPDATE pipeline SET
+                    status = COALESCE(?1, status),
+                    notes = COALESCE(?2, notes),
+                    contact = COALESCE(?3, contact),
+                    follow_up_date = COALESCE(?4, follow_up_date),
+                    updated_at = ?5
+                 WHERE job_id = ?6",
+                params![
+                    status_json,
+                    notes,
+                    contact,
+                    follow_up_str,
+                    Utc::now().to_rfc3339(),
+                    job_id
+                ],
+            )?;
+            (rows, status)
+        };
+        if let Some(s) = status_to_log.as_ref() {
+            // Best-effort: a feedback-write failure shouldn't block the
+            // status update itself - one missing calibration data point is
+            // recoverable, one blocked status update is not.
+            let _ = self.log_status_to_feedback(job_id, s);
+        }
         Ok(rows_affected)
+    }
+
+    /// Issue #10 — wire the existing `engine::feedback` table to real
+    /// pipeline-status transitions, so the LLM scoring prediction can
+    /// eventually be validated against real human outcomes instead of
+    /// remaining purely formula-only. Every transition to a terminal
+    /// status (Interviewing / Offered / Rejected) is recorded with
+    /// task=`scoring`, action=Accepted (Interviewing/Offered) or Ignored
+    /// (Rejected). Keeping the heuristic here — not in the CLI handler —
+    /// means any status-change path (the CLI, programmatic callers, future
+    /// automation) automatically feeds the calibration loop.
+    fn log_status_to_feedback(&self, job_id: &str, new_status: &PipelineStatus) -> Result<()> {
+        use crate::engine::feedback::{FeedbackAction, FeedbackTask, FeedbackTracker};
+        let (action, summary) = match new_status {
+            PipelineStatus::Interviewing => (
+                FeedbackAction::Accepted,
+                "Pipeline: Interviewing - scoring prediction progressed past initial screen",
+            ),
+            PipelineStatus::Offered => (
+                FeedbackAction::Accepted,
+                "Pipeline: Offered - scoring prediction now validated by real outcome",
+            ),
+            PipelineStatus::Rejected => (
+                FeedbackAction::Ignored,
+                "Pipeline: Rejected - scoring prediction was off",
+            ),
+            _ => return Ok(()),
+        };
+        let tracker = FeedbackTracker::new(&self.db_path)?;
+        tracker.record_feedback(
+            job_id,
+            FeedbackTask::Scoring,
+            action,
+            summary,
+            None,
+            0.0,
+            1.0,
+        )?;
+        Ok(())
     }
 
     pub fn save_evaluation(&self, eval: &Evaluation) -> Result<()> {

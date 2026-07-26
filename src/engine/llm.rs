@@ -292,6 +292,30 @@ impl LlmClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
+            // Issue #6 — 401 from a hosted provider almost always means
+            // (a) wrong key, (b) wrong env-var name, or (c) the account
+            // is configured for a different-prefix key. Surface the most
+            // actionable hint inline next to the raw body so the user
+            // sees the fix path immediately.
+            if status.as_u16() == 401 {
+                let hint = match self.provider {
+                    LlmProvider::Lightning => "\n   Hint: confirm LIGHTNING_API_KEY in .env (issue #6: Lighting previously emitted only the raw 401 body, see studio.lighter.ai for the key)",
+                    LlmProvider::Groq => "\n   Hint: confirm GROQ_API_KEY in .env (console.groq.com)",
+                    LlmProvider::Kimi => "\n   Hint: confirm KIMI_API_KEY in .env (platform.moonshot.cn)",
+                    LlmProvider::Glm => "\n   Hint: confirm GLM_API_KEY in .env (bigmodel.cn / Zhipu)",
+                    LlmProvider::OpenAI => "\n   Hint: confirm OPENAI_API_KEY in .env",
+                    LlmProvider::Anthropic => "\n   Hint: confirm ANTHROPIC_API_KEY in .env",
+                    LlmProvider::OpenRouter => "\n   Hint: confirm OPENROUTER_API_KEY in .env",
+                    LlmProvider::Ollama => "\n   Hint: Ollama 401 - check OLLAMA_BASE_URL allows anonymous access or that you've configured remote-ollama auth",
+                    LlmProvider::Custom => "\n   Hint: check the api_key env var configured in .env for the Custom provider",
+                };
+                anyhow::bail!(
+                    "OpenAI-compatible error {}\n   Body: {}{}",
+                    status,
+                    text,
+                    hint
+                );
+            }
             anyhow::bail!("OpenAI-compatible error {}: {}", status, text);
         }
 

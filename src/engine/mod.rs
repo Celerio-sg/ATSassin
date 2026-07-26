@@ -1,3 +1,4 @@
+pub mod ats_detector;
 pub mod benchmark;
 pub mod cost;
 pub mod deep_research;

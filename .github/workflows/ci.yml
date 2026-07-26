@@ -30,6 +30,8 @@ jobs:
         run: cargo build --release
       - name: Test
         run: cargo test --lib --test integration --test cli
+      - name: CLI command docs coverage (issue #9)
+        run: bash scripts/check_cli_docs.sh
 
   windows-check:
     runs-on: windows-latest

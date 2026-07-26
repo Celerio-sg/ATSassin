@@ -248,3 +248,124 @@ Output only the tailored resume in Markdown.".to_string(),
         cleaned
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::job::Job;
+    use crate::models::profile::{Experience, Skill, SkillCategory, SkillLevel, UserProfile};
+    use chrono::Utc;
+
+    fn job_dummy() -> Job {
+        Job {
+            id: "1".to_string(),
+            title: "Engineer".to_string(),
+            company: "Acme".to_string(),
+            location: "Remote".to_string(),
+            remote: true,
+            job_type: None,
+            salary_range: None,
+            description: "do stuff".to_string(),
+            requirements: vec![],
+            posted_at: None,
+            source: "test".to_string(),
+            url: String::new(),
+            applied: false,
+            scraped_at: Utc::now(),
+        }
+    }
+
+    fn profile_with_n_experiences(n: usize) -> UserProfile {
+        UserProfile {
+            name: "Test Candidate".to_string(),
+            email: Some("test@example.com".to_string()),
+            phone: None,
+            location: Some("Remote".to_string()),
+            linkedin_url: None,
+            portfolio_url: None,
+            summary: Some("Test summary".to_string()),
+            skills: vec![Skill {
+                name: "Rust".to_string(),
+                category: SkillCategory::Technical,
+                level: SkillLevel::Expert,
+                years: None,
+            }],
+            experience: (0..n)
+                .map(|i| Experience {
+                    id: format!("exp-{i}"),
+                    title: format!("Engineer {i}"),
+                    company: format!("Co {i}"),
+                    location: None,
+                    start_date: Some("2020".to_string()),
+                    end_date: None,
+                    current: i == 0,
+                    description: format!("Role {i} description"),
+                    achievements: vec![],
+                    skills_used: vec![],
+                })
+                .collect(),
+            education: vec![],
+            certifications: vec![],
+            languages: vec![],
+            raw_text: String::new(),
+            inferred_roles: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    /// Regression test for issue #11: a real candidate's resume was
+    /// silently dropping 13 of 16 experience entries before the prompt
+    /// explicitly required every entry. This test pins the prompt
+    /// text so any future `prompts.rs` edit that loosens the rule
+    /// fails here, *before* a real candidate gets a cut-down resume
+    /// again. Independent of the LLM - tests the prompt surface, not
+    /// the model's faithfulness.
+    #[test]
+    fn tailor_resume_prompt_requires_every_experience_entry() {
+        let prompts = Prompts;
+        let job = job_dummy();
+        let profile = profile_with_n_experiences(5);
+
+        let msgs = prompts.tailor_resume_prompt(&job, &profile);
+        let system = msgs.first().map(|m| m.content.as_str()).unwrap_or("");
+        let user = msgs.get(1).map(|m| m.content.as_str()).unwrap_or("");
+
+        assert!(
+            system.contains("Completeness rule"),
+            "system prompt must explicitly carry a completeness instruction"
+        );
+        assert!(
+            system.to_lowercase().contains("every entry")
+                || system.contains("EVERY experience entry"),
+            "system prompt must state every entry is required"
+        );
+
+        for i in 0..5 {
+            let marker = format!("Engineer {i}");
+            assert!(
+                user.contains(&marker),
+                "user prompt must inline every experience entry; missing {marker}"
+            );
+        }
+        assert!(
+            user.contains("5 entries total"),
+            "user prompt must declare the total entry count for an honest framing"
+        );
+    }
+
+    /// Mirror of the same test for the cover-letter prompt, which is
+    /// intentionally a hi-3-achievement short letter (so no full
+    /// completeness rule there) but still must not silently fabricate
+    /// experience the profile doesn't have.
+    #[test]
+    fn cover_letter_prompt_does_not_invent_experience() {
+        let prompts = Prompts;
+        let job = job_dummy();
+        let profile = profile_with_n_experiences(2);
+
+        let msgs = prompts.cover_letter_prompt(&job, &profile);
+        let system = msgs.first().map(|m| m.content.as_str()).unwrap_or("");
+        assert!(system.contains("Never invent experience"));
+    }
+}

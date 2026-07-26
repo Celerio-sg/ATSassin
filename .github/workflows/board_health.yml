@@ -1,0 +1,88 @@
+# Board-health canary (issue #8): runs daily, exercises every supported
+# board with a query known to return results, and opens/updates a tracking
+# issue if any board mysteriously returns 0. This is the proactive
+# equivalent of the "treat an empty 200 as suspicious" fix applied to
+# `scrape_companies` in #14 - same anti-pattern, broader coverage.
+name: Board health canary
+
+on:
+  schedule:
+    # Daily at 06:00 UTC. The boards (especially SEEK chalice-search,
+    # LinkedIn guest, and the Greenhouse boards-API) have all changed
+    # their JSON shape without notice at least once each in the last two
+    # years, so this catches shape-drift before a real user hits it on a
+    # Thursday morning scan.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # No LLM_PROVIDER needed here - `scan` never calls the LLM (its
+    # relevance ranking is the free local lexical prerank), so this canary
+    # burns zero LLM budget by construction, not by env-var config.
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.91.1"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build atsassin
+        run: cargo build --release
+      - name: Run canary scans
+        id: canary
+        # Each board is fed a predictable broad query "engineer"; if the
+        # board ever returns 0 jobs, that's the drift signal. Output is
+        # a noise-tolerant "board: count" line per board.
+        run: |
+          mkdir -p canary-out
+          declare -a BOARDS=("linkedin" "seek" "social" "companies" "greenhouse:anthropic")
+          declare -a FAILED_BOARDS=()
+          for board in "${BOARDS[@]}"; do
+            out=$(./target/release/atsassin scan --role "engineer" --boards "$board" --location "" --limit 5 -P balanced 2>&1 || true)
+            count=$(echo "$out" | grep -oE "Found [0-9]+ jobs" | head -1 || echo "Found 0 jobs")
+            echo "$board: $count" | tee -a canary-out/canary.log
+            if echo "$count" | grep -qE "Found 0 jobs"; then
+              FAILED_BOARDS+=("$board")
+            fi
+          done
+          echo "FAILED=${FAILED_BOARDS[*]}" >> "$GITHUB_OUTPUT"
+      - name: Open board-health issue if any board returned 0
+        if: steps.canary.outputs.FAILED != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const failed = `${{ steps.canary.outputs.FAILED }}`.trim().split(/\s+/).filter(Boolean);
+            const title = `[canary] board-health: ${failed.length} board(s) returned 0 jobs today`;
+            const body = [
+              '## Automated canary report (issue #8)',
+              '',
+              'Daily board-health scan ran at ' + new Date().toISOString() + ' and these boards returned **0 jobs**:',
+              '',
+              ...failed.map(b => '- `' + b + '`'),
+              '',
+              '### Likely causes',
+              '1. The board changed its JSON response shape (each of LinkedIn guest, SEEK chalice-search, Greenhouse boards-API has done this at least once in the last 2 years).',
+              '2. The board is rate-limiting our IP (a common pattern - they return empty rather than 429).',
+              '3. The pre-existing "treat an empty 200 as suspicious" fix in `scrape_companies` (#14) means 0-job output is the canonical fall-through; investigate first before assuming configuration drift.',
+              '',
+              '### Triage steps',
+              '- Open `./target/release/atsassin scan --role engineer --boards <board> --limit 5` locally and check the raw HTTP response.',
+              '- If shape drift, file a fix immediately; if rate-limit, add `--limit` regression tests against a synthetic mock.',
+              ''
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['bug', 'help wanted']
+            });
