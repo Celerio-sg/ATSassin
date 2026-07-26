@@ -15,6 +15,14 @@ on:
     - cron: "0 6 * * *"
   workflow_dispatch:
 
+# Without this, the job inherits the repo's default GITHUB_TOKEN
+# permissions - which, on a repo with the (recommended, and this repo's)
+# read-only default, makes `issues.create` fail with a 403 "Resource not
+# accessible by integration". Confirmed by actually running this workflow
+# on GitHub's infrastructure, not just validating the YAML locally.
+permissions:
+  issues: write
+
 jobs:
   scan:
     runs-on: ubuntu-latest
