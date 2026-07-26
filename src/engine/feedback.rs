@@ -83,7 +83,10 @@ impl FeedbackTracker {
         confidence_before: f64,
         confidence_after: f64,
     ) -> Result<i64> {
-        let edit_distance = edited.map(|e| Self::edit_distance(recommendation, e));
+        // rusqlite's ToSql/FromSql no longer cover usize/u64 directly (removed
+        // upstream to avoid platform-width ambiguity) - store as i64, which is
+        // what SQLite's INTEGER affinity actually is.
+        let edit_distance = edited.map(|e| Self::edit_distance(recommendation, e) as i64);
         let task_str = task.to_string();
         let action_str = action.to_string();
         let recommendation_str = recommendation.to_string();
@@ -127,8 +130,11 @@ impl FeedbackTracker {
         let conn = Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare("SELECT edit_distance FROM feedback WHERE task_type = ?1 AND action = 'edited' AND edit_distance IS NOT NULL")?;
         let distances: Vec<usize> = stmt
-            .query_map([&task.to_string()], |row| row.get(0))?
-            .collect::<Result<Vec<_>, _>>()?;
+            .query_map([&task.to_string()], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|v| v as usize)
+            .collect();
 
         if distances.is_empty() {
             return Ok(None);
@@ -156,7 +162,7 @@ impl FeedbackTracker {
         let conn = Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare("SELECT id, job_id, task_type, action, recommendation_text, edited_text, edit_distance, confidence_before, confidence_after, created_at FROM feedback ORDER BY id DESC LIMIT ?1")?;
         let events = stmt
-            .query_map([&limit], |row| {
+            .query_map([limit as i64], |row| {
                 Ok(FeedbackEvent {
                     id: row.get(0)?,
                     job_id: row.get(1)?,
@@ -177,7 +183,7 @@ impl FeedbackTracker {
                     },
                     recommendation_text: row.get(4)?,
                     edited_text: row.get(5)?,
-                    edit_distance: row.get(6)?,
+                    edit_distance: row.get::<_, Option<i64>>(6)?.map(|v| v as usize),
                     confidence_before: row.get(7)?,
                     confidence_after: row.get(8)?,
                     created_at: row.get(9)?,

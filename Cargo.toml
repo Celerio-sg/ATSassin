@@ -45,7 +45,7 @@ crossterm = "0.28"
 sysinfo = "0.39"
 
 # Database
-rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
+rusqlite = { version = "0.40", features = ["bundled", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Text processing
