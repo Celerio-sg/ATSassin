@@ -37,7 +37,7 @@ scraper = "0.20"
 # Headless browser fallback
 fantoccini = "0.19"
 # PDF
-printpdf = { version = "0.5", features = ["image"] }
+printpdf = { version = "0.7", features = ["image"] }
 
 # TUI
 ratatui = "0.29"
