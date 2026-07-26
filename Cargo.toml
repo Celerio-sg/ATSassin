@@ -78,7 +78,7 @@ tokio-test = "0.4"
 tempfile = "3.14"
 assert_cmd = "2.0"
 predicates = "3.1"
-portable-pty = "0.8"
+portable-pty = "0.9"
 vt100 = "0.15"
 
 [profile.release]
