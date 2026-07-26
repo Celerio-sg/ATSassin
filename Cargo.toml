@@ -67,7 +67,7 @@ config = "0.14"
 dotenv = "0.15"
 
 # Utilities
-base64 = "0.22"
+base64 = "0.23"
 url = "2.5"
 urlencoding = "2.1"
 zip = "0.6"
