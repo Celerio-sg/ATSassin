@@ -67,7 +67,7 @@ jobs:
           echo "FAILED=${FAILED_BOARDS[*]}" >> "$GITHUB_OUTPUT"
       - name: Open board-health issue if any board returned 0
         if: steps.canary.outputs.FAILED != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const failed = `${{ steps.canary.outputs.FAILED }}`.trim().split(/\s+/).filter(Boolean);
