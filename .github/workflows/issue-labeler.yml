@@ -1,0 +1,58 @@
+name: Issue labeler
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            // Maps the text shown in the Area dropdown to a repository label.
+            // These labels must be created in the repo before this workflow can apply them.
+            const areaMap = {
+              'PII / privacy': 'area:pii',
+              'Career coach / continuous polling': 'area:coach',
+              'Crowd-sourcing / community registry': 'area:crowdsource',
+              'AI exposure / automation risk': 'area:exposure',
+              'LoRA sharing / autonomous loop': 'design:autonomous-loop',
+              'Core CLI / scan / evaluate / tailor': 'core-cli',
+              'TUI': 'tui',
+              'Docs / onboarding': 'documentation',
+              'CI / build / packaging': 'ci-build'
+            };
+            const allAreaLabels = new Set(Object.values(areaMap));
+
+            const body = context.payload.issue.body || '';
+            const labels = context.payload.issue.labels.map(l => l.name);
+
+            // Parse the structured issue form: "### Area\n<value>".
+            const areaMatch = body.match(/### Area\r?\n([^\r\n]+)/);
+            const selectedArea = areaMatch ? areaMatch[1].trim() : null;
+            const targetLabel = selectedArea ? areaMap[selectedArea] : null;
+
+            const labelsToAdd = targetLabel && !labels.includes(targetLabel) ? [targetLabel] : [];
+            const labelsToRemove = labels.filter(name => allAreaLabels.has(name) && name !== targetLabel);
+
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: labelsToAdd
+              });
+            }
+
+            for (const name of labelsToRemove) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: name
+              });
+            }

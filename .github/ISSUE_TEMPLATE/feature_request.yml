@@ -6,6 +6,26 @@ body:
     attributes:
       value: |
         Before filing, check `docs/ROADMAP.md` and the [open issues](https://github.com/Celerio-sg/ATSassin/issues) — it might already be tracked. For anything touching the autonomous-loop roadmap specifically, see `docs/DESIGN_autonomous_loop.md` §0 for the design principles new features are expected to respect (lightweight by default, no new hard dependencies without a strong reason, opt-in for anything with real-world side effects).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the project does this relate to? This helps route the issue to the right maintainer.
+      options:
+        - Core CLI / scan / evaluate / tailor
+        - TUI
+        - PII / privacy
+        - Career coach / continuous polling
+        - Crowd-sourcing / community registry
+        - AI exposure / automation risk
+        - LoRA sharing / autonomous loop
+        - Docs / onboarding
+        - CI / build / packaging
+        - Other
+  - type: markdown
+    attributes:
+      value: |
+        Labels we may apply based on the area above. See `CONTRIBUTING.md` for the full labels legend.
   - type: textarea
     id: problem
     attributes:

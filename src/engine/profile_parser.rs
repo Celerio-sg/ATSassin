@@ -78,7 +78,7 @@ impl ProfileParser {
                 let selector = scraper::Selector::parse(
                     "main, article, .content, #content, .portfolio, #portfolio",
                 )
-                .unwrap();
+                .map_err(|e| anyhow::anyhow!("Failed to parse CSS selector: {}", e))?;
                 let text = document
                     .select(&selector)
                     .map(|el| el.text().collect::<Vec<_>>().join(" "))

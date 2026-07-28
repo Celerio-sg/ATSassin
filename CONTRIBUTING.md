@@ -1,13 +1,48 @@
 # Contributing to ATSassin
 
-Thanks for considering a contribution. This project's whole point is to make good job-search tooling free and accessible to anyone, so outside contributions are genuinely wanted, not just tolerated.
+Thanks for taking the time to contribute. This project exists to make good job-search tooling **free and accessible to everyone**, and that only works if the community owns it. Whether you are fixing a typo, improving docs, or shipping a new feature, you are welcome here.
+
+## Table of contents
+
+- [What we are building](#what-we-are-building)
+- [Before you start](#before-you-start)
+- [Development setup](#development-setup)
+- [Picking your first issue](#picking-your-first-issue)
+- [Getting help](#getting-help)
+- [Opening a pull request](#opening-a-pull-request)
+- [Code conventions](#code-conventions)
+- [Reporting bugs](#reporting-bugs)
+- [Requesting features](#requesting-features)
+- [Security issues](#security-issues)
+- [Code of conduct](#code-of-conduct)
+- [Contributor recognition](#contributor-recognition)
+
+---
+
+## What we are building
+
+ATSassin is a **local-first, privacy-first, job-search assistant** that runs as a single Rust binary. It helps people discover, evaluate, and tailor applications without selling their data or requiring expensive subscriptions.
+
+Right now we are also building an **experimental autonomous LoRA-sharing ecosystem** so users can benefit from small, community-created adapters without touching a blockchain, a SaaS, or another user's API credentials. If you care about local AI, privacy, or democratizing access to better job outcomes, your skills are probably useful here.
+
+Key documents to understand the direction:
+
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — known gaps and the short-term roadmap
+- [`docs/DESIGN_autonomous_loop.md`](docs/DESIGN_autonomous_loop.md) — architecture and design principles for the autonomous loop
+- [`docs/CRITICAL_CHAIN_PLAN.md`](docs/CRITICAL_CHAIN_PLAN.md) — how the LoRA-sharing work is sequenced and why
+- [`docs/CATEGORY_LEADERSHIP_ROADMAP.md`](docs/CATEGORY_LEADERSHIP_ROADMAP.md) — where the project is fragile and how to make it structurally better
+
+---
 
 ## Before you start
 
-- **Read [`docs/ROADMAP.md`](docs/ROADMAP.md)** for known issues, and browse [open issues](https://github.com/Celerio-sg/ATSassin/issues) — everything real and open is tracked there, labeled by phase/area.
-- **Look for `good first issue`** if this is your first contribution here. These are scoped to be reviewable in one sitting and don't require deep familiarity with the codebase.
-- **Check for a `blocked` label** before starting — it means the issue depends on another one landing first; the issue body says which.
-- If you want to work on something not yet filed as an issue, open one first and describe what you're planning before writing code — this avoids duplicate work and lets a maintainer flag anything that conflicts with the project's direction (see [`docs/DESIGN_autonomous_loop.md`](docs/DESIGN_autonomous_loop.md) §0 for the core design principles new features are expected to respect: lightweight by default, no new hard dependencies without a strong reason, opt-in for anything with real-world side effects).
+1. **Read the relevant design docs above.** New features are expected to respect a few hard rules: lightweight by default, no new hard dependencies without a strong reason, and opt-in for anything with real-world side effects.
+2. **Check the [open issues](https://github.com/Celerio-sg/ATSassin/issues).** Almost everything real and open is tracked there.
+3. **Look for the `good first issue` label** if this is your first contribution. These are scoped to be reviewable in one sitting and do not require deep familiarity with the codebase.
+4. **Check for the `blocked` label** before starting — it means the issue depends on another one landing first.
+5. **Open an issue first** if you want to work on something not yet filed. This avoids duplicate work and lets a maintainer flag anything that conflicts with the project's direction.
+
+---
 
 ## Development setup
 
@@ -19,9 +54,94 @@ cp .env.example .env
 
 No Docker, no Python, no Node required to build or test the core project. `rust-toolchain.toml` pins the exact toolchain CI uses — running `cargo build` will fetch it automatically via `rustup`.
 
-## Before opening a PR
+If you hit a build issue, check:
 
-Run the same checks CI runs, locally, first:
+- You have a recent stable Rust toolchain via `rustup`.
+- You ran `cargo build --release` at least once to fetch dependencies.
+- The issue is not already covered in [open issues](https://github.com/Celerio-sg/ATSassin/issues).
+
+---
+
+## Picking your first issue
+
+We try to keep the issue tracker honest. A good issue tells you:
+
+- What the problem or feature is
+- Why it matters
+- Acceptance criteria (what "done" looks like)
+- Whether it is blocked by another issue
+
+A great place to start is one of these labels:
+
+- [`good first issue`](https://github.com/Celerio-sg/ATSassin/contribute) — small, self-contained, mentor-friendly
+- [`help wanted`](https://github.com/Celerio-sg/ATSassin/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) — larger tasks that need community help
+- [`documentation`](https://github.com/Celerio-sg/ATSassin/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation) — docs improvements, examples, or clarity fixes
+
+If an issue interests you but is unclear, **ask before coding**. A short question in the issue saves everyone time.
+
+---
+
+## Active parallel tracks
+
+These workstreams can be developed in parallel — they are not blocked by each other, although some depend on shared building blocks (e.g. PII scrubbing gates any shared data). See `docs/AUDIT_DESIGN_GAPS.md` §Parallel-track notes and `docs/CRITICAL_CHAIN_PLAN.md` for dependencies and sequencing.
+
+| Track | Label | Entry point | Current owner |
+|---|---|---|---|
+| **PII / privacy** | `area:pii` | `src/engine/pii_scrubber.rs` | TBD — see `CODEOWNERS` |
+| **Career coach** | `area:coach` | `docs/ROADMAP.md` §Next — Career Coaching | TBD — see `CODEOWNERS` |
+| **Crowd-sourcing** | `area:crowdsource` | `docs/ROADMAP.md` §Stage 1b | TBD — see `CODEOWNERS` |
+| **AI exposure** | `area:exposure` | `docs/AUDIT_DESIGN_GAPS.md` §1.4 | TBD — see `CODEOWNERS` |
+| **Autonomous LoRA sharing** | `design:autonomous-loop` | `docs/CRITICAL_CHAIN_PLAN.md` | `@simonbrender` |
+
+### Becoming an area lead
+
+If you make sustained, high-quality contributions to one track, a maintainer may add you as the CODEOWNER for that area. There is no formal ladder — consistent, helpful work and good judgment are enough.
+
+Typical path to becoming an area lead:
+
+1. Open or comment on issues in the track.
+2. Land 2–3 meaningful PRs in the area with minimal review cycles.
+3. Review other contributors' PRs in that area and provide useful feedback.
+4. Open a discussion or mention your interest in the relevant issue; a maintainer will update `CODEOWNERS`.
+
+Area leads are not expected to be available 24/7. They are simply the first reviewer for new PRs in their area and help keep the issue backlog triaged.
+
+### Labels we use
+
+| Label | Meaning |
+|---|---|
+| `good first issue` | Small, self-contained, mentor-friendly |
+| `help wanted` | Larger tasks needing community help |
+| `documentation` | Docs, examples, or clarity fixes |
+| `bug` | Something is broken |
+| `enhancement` | New feature or improvement |
+| `design` | Needs architectural review first |
+| `area:pii` | Privacy / PII scrubbing |
+| `area:coach` | Career coaching / continuous polling |
+| `area:crowdsource` | Crowd-sourcing / community registry |
+| `area:exposure` | AI exposure / automation risk |
+| `design:autonomous-loop` | LoRA sharing / autonomous loop |
+| `blocked` | Depends on another issue |
+
+When you open an issue or PR, please pick the relevant `area:*` label so the right maintainer sees it. If you do not have permission to add labels, a maintainer will triage it for you.
+
+---
+
+## Getting help
+
+- **First time here?** Check out issue [#53 — Welcome, first-time contributors!](https://github.com/Celerio-sg/ATSassin/issues/53)
+- **Not sure which channel to use?** See [docs/COMMUNITY.md](docs/COMMUNITY.md)
+- **Casual questions / ideas:** [GitHub Discussions](https://github.com/Celerio-sg/ATSassin/discussions)
+- **Real-time chat:** [Discord](https://discord.gg/PwwnemcAy) — casual chat, quick questions, and pairing
+- **Bug reports / feature requests:** [Open an issue](https://github.com/Celerio-sg/ATSassin/issues/new/choose)
+- **Real-time chat:** check the repository README or pinned issues for any Discord / community links
+- **Mentorship:** if you are a first-time contributor and get stuck, mention it in the issue or PR. Maintainers try to pair-program or leave detailed review guidance when bandwidth allows.
+
+---
+
+## Opening a pull request
+
+Run the same checks CI runs, locally, before opening a PR:
 
 ```bash
 cargo fmt -- --check
@@ -32,23 +152,66 @@ cargo test --lib --test integration --test cli
 
 All four must pass clean. `cargo clippy`'s `-D warnings` is strict on purpose — a real regression class (dead code hidden behind a misplaced `#[allow]`) shipped past local review once this session because it wasn't run before committing; running it locally is the whole prevention.
 
-If you're touching anything in `.github/workflows/`, be aware YAML validity isn't enough — a scheduled workflow shipped this session with correct YAML but a real runtime failure (missing `permissions: issues: write`) that only showed up when actually triggered on GitHub's infrastructure. If you can, trigger it via `workflow_dispatch` and check the real run before opening the PR.
+If you are touching anything in `.github/workflows/`, be aware YAML validity is not enough — a scheduled workflow shipped this session with correct YAML but a real runtime failure (missing `permissions: issues: write`) that only showed up when actually triggered on GitHub's infrastructure. If you can, trigger it via `workflow_dispatch` and check the real run before opening the PR.
+
+A good PR:
+
+- Links the issue it closes (e.g., "Closes #123")
+- Explains the *why*, not just the *what*
+- Includes verification steps ("I ran X and saw Y")
+- Keeps the change as small as possible while still being useful
+
+---
+
+## Community and ecosystem
+
+- [docs/COMMUNITY.md](docs/COMMUNITY.md) — how we communicate, where each conversation belongs, and how to avoid duplication
+- [docs/AWESOME.md](docs/AWESOME.md) — plugins, integrations, and resources built by the community
+- [GitHub Discussions](https://github.com/Celerio-sg/ATSassin/discussions) — questions, ideas, and anything that is not a bug or feature request
+- **Real-time chat** — [Discord](https://discord.gg/PwwnemcAy) — casual chat, quick questions, and pairing
+- **Submit to awesome lists** — tracked in issue [#55](https://github.com/Celerio-sg/ATSassin/issues/55)
 
 ## Code conventions
 
 - **No comments explaining *what* code does** — names should make that obvious. Comments are for *why*: a non-obvious constraint, a workaround for a specific bug, a decision that would look wrong without context.
 - **Never fabricate data or results.** This project's single biggest historical defect class was scan output that looked real but wasn't. If a data source can't be verified, degrade to an honest empty/error state — never invent a plausible-looking placeholder. See `docs/ROADMAP.md`'s ground-truth note for the standard this is held to.
-- **Prefer real end-to-end verification over trusting unit tests in isolation.** Several real bugs this session passed their own unit tests but broke on the first real end-to-end run (a parser that worked in isolation but lost data on the actual file round-trip; a CI check whose regex matched nothing). If you're touching a parser, a CLI command, or a CI script, run it for real against real input before considering it done.
-- Match existing patterns in the file you're editing rather than introducing a new style.
+- **Prefer real end-to-end verification over trusting unit tests in isolation.** Several real bugs this session passed their own unit tests but broke on the first real end-to-end run (a parser that worked in isolation but lost data on the actual file round-trip; a CI check whose regex matched nothing). If you are touching a parser, a CLI command, or a CI script, run it for real against real input before considering it done.
+- Match existing patterns in the file you are editing rather than introducing a new style.
 
-## Reporting bugs / requesting features
+---
 
-Open a GitHub issue. Include what you ran, what you expected, what actually happened. If it's a scraper/board issue, include the exact command and, if possible, the raw response (redact anything personal).
+## Reporting bugs
+
+Open a [bug report](https://github.com/Celerio-sg/ATSassin/issues/new?template=bug_report.yml). Include:
+
+- What you ran
+- What you expected
+- What actually happened
+- Version / commit hash
+- Relevant logs (redact anything personal)
+
+If it is a scraper or board issue, the exact command and raw response (anonymized) are the fastest path to a fix.
+
+## Requesting features
+
+Open a [feature request](https://github.com/Celerio-sg/ATSassin/issues/new?template=feature_request.yml). Before filing, check `docs/ROADMAP.md` and open issues — it might already be tracked.
+
+---
 
 ## Security issues
 
 Do not open a public issue for a security vulnerability — see [`SECURITY.md`](SECURITY.md).
 
+---
+
 ## Code of conduct
 
 This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+
+---
+
+## Contributor recognition
+
+We believe in giving credit. When your PR merges, your GitHub handle will appear in the release notes and in the project's contributor list. If you would prefer not to be named, let the maintainer know.
+
+If you make a significant or sustained contribution, you may be invited to help triage issues or review PRs. There is no formal ladder — just consistent, helpful work and good judgment.

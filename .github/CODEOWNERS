@@ -1,2 +1,30 @@
 # Default reviewer for everything not covered by a more specific rule below.
 * @simonbrender
+
+# Privacy / PII scrubber — any change here gates every community-sharing feature.
+# TODO: add a dedicated privacy lead once one emerges.
+src/engine/pii_scrubber.rs @simonbrender
+
+# Autonomous loop / LoRA sharing / registry / DHT
+# TODO: add an autonomous-loop lead once one emerges.
+src/engine/distillation.rs @simonbrender
+
+# Career-coach / continuous polling / market-watch daemon
+# TODO: add a coach-loop lead once one emerges.
+# src/daemon/ @simonbrender
+
+# AI exposure / automation-risk analyzer
+# TODO: add a data/analytics lead once one emerges.
+# src/engine/ai_exposure.rs @simonbrender
+
+# Crowd-sourcing / community registry payloads
+# TODO: add a community-registry lead once one emerges.
+# src/engine/registry.rs @simonbrender
+
+# GitHub infrastructure and contributor docs
+.github/ @simonbrender
+CONTRIBUTING.md @simonbrender
+SECURITY.md @simonbrender
+
+# Roadmap / design docs
+/docs/ @simonbrender

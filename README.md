@@ -2,23 +2,45 @@
 
 [![CI](https://github.com/Celerio-sg/ATSassin/actions/workflows/ci.yml/badge.svg)](https://github.com/Celerio-sg/ATSassin/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![good first issues](https://img.shields.io/github/issues/Celerio-sg/ATSassin/good%20first%20issue?color=7057ff&label=good%20first%20issues)](https://github.com/Celerio-sg/ATSassin/contribute)
+[![help wanted](https://img.shields.io/github/issues/Celerio-sg/ATSassin/help%20wanted?color=008672&label=help%20wanted)](https://github.com/Celerio-sg/ATSassin/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+[![GitHub stars](https://img.shields.io/github/stars/Celerio-sg/ATSassin?style=social)](https://github.com/Celerio-sg/ATSassin)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-brightgreen?logo=GitHub-Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fsimonbrender)](https://github.com/sponsors/simonbrender)
 
 > The silent killer of bad job matches.
 
 ATSassin is a lightweight, privacy-first, local-first job search assassin. It parses your CV, LinkedIn export, and portfolio to dynamically infer suitable roles, deep-research markets, score jobs with ATS accuracy, tailor resumes and cover letters, and track your pipeline — all on your machine with Ollama or your favorite local LLM.
 
+> ⭐ **If ATSassin saves you time or helps you land a better role, please [give it a star on GitHub](https://github.com/Celerio-sg/ATSassin)** — it keeps the project visible and free for everyone.
+
+## 🚀 Want to contribute?
+
+We'd love your help. This project is building a **free, autonomous earning optimizer for everyone** — and that only works if the community owns it.
+
+- **First time?** Check out [`good first issue`](https://github.com/Celerio-sg/ATSassin/contribute) for small, self-contained tasks.
+- **Not sure where to start?** Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and say hello in [Discussions](https://github.com/Celerio-sg/ATSassin/discussions) (or open an issue — we read everything).
+- **Found a bug or have an idea?** [Open an issue](https://github.com/Celerio-sg/ATSassin/issues/new/choose) — no patch required.
+- **Security concern?** See [`SECURITY.md`](SECURITY.md) — please don't file it publicly.
+
+## Demo
+
+![ATSassin demo](assets/demo.gif)
+
+A real-time terminal walkthrough of `atsassin profile init → scan → evaluate → tailor → tui`, recorded directly on a Windows host. The animation uses a fully synthetic, anonymised profile — no real personal information is shown. For details on how the recording was made, see [docs/DEMO_RECORDING.md](docs/DEMO_RECORDING.md).
+
 ## Job-Securing Playbook
 
 See [PLAYBOOK.md](PLAYBOOK.md) for the integrated APAC-focused playbook covering recruiter outreach, referrals, contract platforms, personal branding, and interview prep.
 
-## Why ATSassin?
+## Why ATSassin? (and why contribute)
 
 - **Dynamic role inference**: one input (resume/LinkedIn/portfolio) -> 5-10 inferred role archetypes with market demand and compensation bands
 - **Local-first**: 100% local inference via Ollama; optional cloud swap (Groq, OpenRouter, OpenAI, Anthropic, Kimi, GLM, Lightning)
 - **Hardware-adaptive**: runs on a 4GB laptop CPU, 8GB integrated graphics, or 32GB workstation
 - **Single binary**: `cargo build --release` and you're done — no Docker, no Python, no Node
 - **Privacy**: SQLite on disk, zero telemetry, zero SaaS, zero third-party account required
+
+**Why this matters:** most job-search tooling is either expensive SaaS, opaque black-box AI, or sells your data. ATSassin is an open, local-first alternative that stays under your control. If you care about **privacy**, **open-source tooling**, **local AI**, or **democratizing access to better job outcomes**, there's a good chance your skills can help.
 
 ## Quick Start
 
@@ -119,7 +141,34 @@ A scheduled GitHub Action (`/.github/workflows/board_health.yml`) sweeps every s
 
 ## Contributing
 
-Contributions are genuinely wanted, not just tolerated — the goal is to make good job-search tooling free and accessible to anyone. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and conventions, [docs/ROADMAP.md](docs/ROADMAP.md) for known gaps, and [open issues](https://github.com/Celerio-sg/ATSassin/issues) labeled `good first issue` for a place to start. This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). Found a security issue? See [SECURITY.md](SECURITY.md) — please don't file it as a public issue.
+Contributions are genuinely wanted, not just tolerated — the goal is to make good job-search tooling free and accessible to anyone.
+
+-  **[CONTRIBUTING.md](CONTRIBUTING.md)** — setup, conventions, and how to pick your first issue
+- 🗺️ **[docs/ROADMAP.md](docs/ROADMAP.md)** — known gaps and the direction of travel
+-  **[docs/CRITICAL_CHAIN_PLAN.md](docs/CRITICAL_CHAIN_PLAN.md)** — how the experimental LoRA-sharing work is sequenced
+- 🏷️ **[good first issue](https://github.com/Celerio-sg/ATSassin/contribute)** — small, self-contained starter tasks
+- 🏷️ **[help wanted](https://github.com/Celerio-sg/ATSassin/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)** — larger tasks that need community help
+- 💬 **[Discussions](https://github.com/Celerio-sg/ATSassin/discussions)** — questions, ideas, and casual chat
+- 🛡️ **[SECURITY.md](SECURITY.md)** — for security reports (please don't file them as public issues)
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+
+## Community and ecosystem
+
+- **First-time?** Say hello in issue [#53 — Welcome, first-time contributors!](https://github.com/Celerio-sg/ATSassin/issues/53) and a maintainer will help you find your first task.
+- **Real-time chat**: [Discord](https://discord.gg/PwwnemcAy) — casual questions, pairing, and community updates.
+- **Channel guide**: [docs/COMMUNITY.md](docs/COMMUNITY.md) — where to ask questions, discuss ideas, and avoid duplication.
+- **Awesome ATSassin**: [docs/AWESOME.md](docs/AWESOME.md) — plugins, integrations, and resources built by the community.
+- **Help us submit to awesome lists**: issue [#55 — Submit ATSassin to awesome lists](https://github.com/Celerio-sg/ATSassin/issues/55).
+
+## Support ATSassin
+
+ATSassin is free, open-source, and independent. If the tool has saved you time, helped you avoid a SaaS subscription, or improved your job search, consider [sponsoring the project on GitHub](https://github.com/sponsors/simonbrender).
+
+Sponsorship keeps the core tool free for everyone, funds CI and low-spec hardware testing, and supports the review and mentorship that keeps the community growing.
+
+-  [Become a GitHub Sponsor](https://github.com/sponsors/simonbrender)
+- 📄 [Read the full sponsorship strategy](docs/SPONSORS.md)
 
 ## License
 

@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel redundant runs on the same branch/PR so parallel contributor work
+# doesn't queue up unnecessarily. Never cancel in-progress main-branch builds
+# in case a release or downstream action depends on them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest

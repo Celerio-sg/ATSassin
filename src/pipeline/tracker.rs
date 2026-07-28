@@ -37,7 +37,10 @@ impl PipelineTracker {
     }
 
     pub fn init_schema(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS profiles (
@@ -139,7 +142,10 @@ impl PipelineTracker {
     }
 
     pub fn save_profile(&self, profile: &UserProfile) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "INSERT OR REPLACE INTO profiles (id, name, email, phone, location, linkedin_url, portfolio_url, summary, raw_text, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -161,7 +167,10 @@ impl PipelineTracker {
     }
 
     pub fn save_job(&self, job: &Job) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "INSERT OR REPLACE INTO jobs (id, title, company, location, remote, job_type, salary_range, description, requirements, posted_at, source, url, applied, scraped_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
@@ -186,7 +195,10 @@ impl PipelineTracker {
     }
 
     pub fn get_job(&self, job_id: &str) -> Result<Option<Job>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, company, location, remote, job_type, salary_range, description, requirements, posted_at, source, url, applied, scraped_at FROM jobs WHERE id = ?1",
         )?;
@@ -230,7 +242,10 @@ impl PipelineTracker {
         job_id: &str,
         status: PipelineStatus,
     ) -> Result<usize> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let rows_affected = conn.execute(
             "UPDATE pipeline SET status = ?1, updated_at = ?2 WHERE job_id = ?3",
             params![
@@ -256,7 +271,10 @@ impl PipelineTracker {
         follow_up_date: Option<DateTime<Utc>>,
     ) -> Result<usize> {
         let (rows_affected, status_to_log) = {
-            let conn = self.conn.lock().unwrap();
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
             let status_json = status
                 .as_ref()
                 .map(|s| serde_json::to_string(s).unwrap_or_default());
@@ -329,7 +347,10 @@ impl PipelineTracker {
     }
 
     pub fn save_evaluation(&self, eval: &Evaluation) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "INSERT OR REPLACE INTO evaluations (id, job_id, overall_score, overall_grade, dimensions, match_summary, strengths, gaps, red_flags, recommendation, model_used, evaluated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
@@ -362,7 +383,10 @@ impl PipelineTracker {
         cover_letter_text: &str,
         model_used: &str,
     ) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "INSERT INTO applications (id, job_id, resume_text, cover_letter_text, model_used, generated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -384,7 +408,10 @@ impl PipelineTracker {
         &self,
         job_id: &str,
     ) -> Result<Option<crate::models::job::Application>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, job_id, resume_text, cover_letter_text, model_used, generated_at
              FROM applications WHERE job_id = ?1 ORDER BY generated_at DESC LIMIT 1",
@@ -424,7 +451,10 @@ impl PipelineTracker {
             created_at: now,
             updated_at: now,
         };
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "INSERT INTO pipeline (id, job_id, status, notes, contact, follow_up_date, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -443,7 +473,10 @@ impl PipelineTracker {
     }
 
     pub fn update_pipeline_status(&self, entry_id: &str, status: PipelineStatus) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "UPDATE pipeline SET status = ?1, updated_at = ?2 WHERE id = ?3",
             params![
@@ -456,7 +489,10 @@ impl PipelineTracker {
     }
 
     pub fn list_pipeline(&self) -> Result<Vec<PipelineEntry>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let mut stmt = conn.prepare("SELECT id, job_id, status, notes, contact, follow_up_date, created_at, updated_at FROM pipeline ORDER BY updated_at DESC")?;
         let mut rows = stmt.query([])?;
 
@@ -482,7 +518,10 @@ impl PipelineTracker {
     /// Never fabricates a score or status for a job that doesn't have one -
     /// both columns are `None` until real data exists.
     pub fn list_job_rows(&self, limit: usize) -> Result<Vec<JobRow>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT j.id, j.title, j.company, j.location, j.url, j.description, j.salary_range, j.remote,
                     e.overall_score, e.overall_grade, p.status, j.posted_at, j.scraped_at
@@ -535,7 +574,10 @@ impl PipelineTracker {
     /// real, sorted activity feed. Nothing here is invented - an empty
     /// database produces an empty feed.
     pub fn recent_activity(&self, limit: usize) -> Result<Vec<ActivityEvent>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let mut events = Vec::new();
 
         let mut stmt = conn.prepare(
@@ -604,7 +646,10 @@ impl PipelineTracker {
     /// Full evaluation (dimensions, strengths, gaps, red flags) for a job's
     /// most recent evaluation, if one exists - backs the TUI's detail panel.
     pub fn get_latest_evaluation(&self, job_id: &str) -> Result<Option<Evaluation>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, job_id, overall_score, overall_grade, dimensions, match_summary, strengths, gaps, red_flags, recommendation, model_used, evaluated_at
              FROM evaluations WHERE job_id = ?1 ORDER BY evaluated_at DESC LIMIT 1",
@@ -664,7 +709,10 @@ impl PipelineTracker {
     /// Real counts of pipeline entries by status - backs the TUI's pipeline
     /// summary panel. Empty vec if the pipeline is empty; never invented.
     pub fn pipeline_status_counts(&self) -> Result<Vec<(PipelineStatus, usize)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let mut stmt = conn.prepare("SELECT status, COUNT(*) FROM pipeline GROUP BY status")?;
         let mut rows = stmt.query([])?;
         let mut out = Vec::new();
@@ -683,7 +731,10 @@ impl PipelineTracker {
     /// from anywhere, so every session paid for a fresh LLM call just to
     /// re-show roles the user had already seen.
     pub fn list_roles(&self, limit: usize) -> Result<Vec<RoleArchetype>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, industry, seniority, fit_score, market_demand, compensation_currency, compensation_min, compensation_max, compensation_median, compensation_source, typical_requirements, top_companies, inferred_from_profile, created_at
              FROM roles ORDER BY created_at DESC LIMIT ?1",
@@ -753,7 +804,10 @@ impl PipelineTracker {
     }
 
     pub fn save_role(&self, role: &RoleArchetype) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "INSERT OR REPLACE INTO roles (id, title, industry, seniority, fit_score, market_demand, compensation_currency, compensation_min, compensation_max, compensation_median, compensation_source, typical_requirements, top_companies, inferred_from_profile, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
@@ -784,7 +838,10 @@ impl PipelineTracker {
     /// Persist discovered company boards to the SQLite `company_boards`
     /// table (issue #1).
     pub fn save_company_boards(&self, boards: &[DiscoveredBoard]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS company_boards (
                 company TEXT PRIMARY KEY,
@@ -815,7 +872,10 @@ impl PipelineTracker {
 
     /// Load all persisted discovered company boards.
     pub fn load_company_boards(&self) -> Result<Vec<DiscoveredBoard>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS company_boards (
                 company TEXT PRIMARY KEY,

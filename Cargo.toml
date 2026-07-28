@@ -6,7 +6,7 @@ authors = ["ATSassin Contributors"]
 license = "MIT"
 description = "The silent killer of bad job matches. A lightweight, privacy-first, local-first job search assassin."
 repository = "https://github.com/Celerio-sg/ATSassin"
-keywords = ["job-search", "resume", "ats", "ollama", "local-first", "privacy"]
+keywords = ["job-search", "resume", "ats", "ollama", "local-first", "privacy", "career", "open-source", "local-ai"]
 categories = ["command-line-utilities", "text-processing"]
 
 [lib]
@@ -30,7 +30,7 @@ toml = "0.8"
 tokio = { version = "1.45", features = ["full"] }
 
 # HTTP / LLM client
-reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "blocking", "multipart"] }
 
 # HTML parsing
 scraper = "0.27"
@@ -52,6 +52,7 @@ chrono = { version = "0.4", features = ["serde"] }
 tokenizers = "0.23"
 regex = "1.11"
 uuid = { version = "1.11", features = ["v4", "serde"] }
+lazy_static = "1.5"
 
 # Error handling
 anyhow = "1.0"

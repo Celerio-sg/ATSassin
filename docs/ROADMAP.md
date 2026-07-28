@@ -31,10 +31,13 @@ These are real, currently-open items, not resolved yet:
 
 ### Next — Career Coaching (flagship feature request)
 
-A built-in career coaching mode, going beyond "find and tailor applications for the job you already know you want" toward helping a candidate figure out what they actually want:
+A built-in career coaching mode, going beyond "find and tailor applications for the job you already know you want" toward helping a candidate figure out what they actually want and whether their current position is still the best option:
 
+- **Continuous market watch**: a scheduled background scan (or lightweight daemon on `balanced`+ hardware) keeps an up-to-date view of open roles that match the user's profile and preferences. It does not wait for the user to run a command.
+- **Preference-challenge insights**: when the data shows that a small change — relocating, switching to contract, picking up a named adjacent skill, or targeting a different industry — could materially improve income or prospects, ATSassin surfaces the finding as a question, not a prescription. Example: "Senior Rust engineers in Berlin report median compensation ~40% higher than your current market; would you consider relocation or remote hiring in that region?"
 - **Earning-potential analysis**: given a candidate's real skills/experience, surface adjacent roles, industries, or arrangements (contract vs. FTE, remote vs. local market) they may not have considered that pay meaningfully more for skills they already have — grounded in real market data (see gap #3; this feature depends on solving that first), not hand-wavy LLM guessing.
 - **Interests-outside-work discovery**: a structured, low-pressure conversation (not a generic "what are your hobbies" prompt) that surfaces genuine interests and turns them into a short list of *real, currently-open roles* that connect to those interests — using the existing role-inference and scan infrastructure, but seeded from interests rather than only from past job titles. The goal is surfacing options the candidate wouldn't have searched for themselves, not replacing their judgment.
+- **Anti-atrophy retention**: the coaching loop is designed to keep users engaged even when they are not actively job-hunting — by helping them re-evaluate and re-validate their current position against the market, not by spamming them.
 - Should reuse the existing `profile`/`roles`/`scan` pipeline rather than becoming a separate subsystem — coaching output should be able to flow directly into `evaluate`/`tailor` like any other discovered role.
 - Explicitly **not** meant to auto-decide anything for the user — this is a discovery/expansion tool, consistent with the "recommends and tailors, never auto-applies" principle below.
 
@@ -44,6 +47,80 @@ A built-in career coaching mode, going beyond "find and tailor applications for 
 - Browser-automation-based application submission (opt-in, explicit per-application confirmation — never silent)
 - Multi-user / team collaboration
 - WASM plugin system for custom matching logic
+- Autonomous community LoRA sharing and provenance — see the Experimental section below
+
+## Experimental / Long-term — Autonomous community LoRA sharing
+
+> **Why this matters:** the goal is a free, autonomous earning optimizer for everyone. That only works if better source models (e.g. a Fable 5 distillate) naturally produce higher-ranked, more useful shared artifacts than weaker source models (e.g. a Llama 30b distillate), and if users never have to become ML engineers to benefit.
+
+**Core trade-off: start light, prove the concept, then scale.**
+
+Whole-model P2P/torrent distribution is too heavy for ATSassin's local-first, low-spec promise today — multi-gigabyte files, seeder economics, monolithic updates, and unverifiable provenance claims. The lighter path is to share **LoRA adapters** (10–200 MB) that apply to a base model the user already has locally. This keeps bandwidth, seeding, and incremental-update costs low, keeps the core Rust binary Python-free, and lets the project learn about provenance and trustless reputation before committing to a heavier distribution layer.
+
+### Stage 0 — Local LoRA generation (foundations, no distribution)
+
+Extends the existing `atsassin distill` command:
+
+- Export high-confidence training pairs from local feedback and telemetry.
+- Generate a ready-to-run external LoRA training script (e.g. Unsloth / llama.cpp / MLX), building on the current `train_unsloth.py` generation path.
+- The user trains in their own Python environment; the resulting adapter stays local.
+- This stage proves the artifact format and quality gate without any network sharing.
+
+### Stage 1 — Read-only community registry (proof of concept)
+
+- Host a static `registry.json` on a free, user-accessible layer (e.g. GitHub Pages, Cloudflare R2, or Hugging Face) listing community LoRA adapters.
+- Each adapter ships with a signed/verifiable manifest:
+  - `adapter_hash` (SHA-256 of the GGUF/Safetensors file)
+  - `parent_model` / `parent_model_hash` (claimed base model; treated as a claim unless the publisher independently publishes a hash)
+  - `teacher_lineage` (claimed teacher model, e.g. "Fable 5" or "Llama 30b")
+  - `task_type` (e.g. `scoring`, `tailoring`, `cover_letter`)
+  - optional `author_pubkey`
+- ATSassin fetches the registry only when the user opts in (e.g. `[lora_registry] enabled = true` in config), validates hashes, downloads the best-matching adapter via `reqwest`, and applies it to the local Ollama base model (creating a new model variant with `FROM <base>\nADAPTER <path>`).
+- Ranking in this stage is manual/curated.
+
+### Stage 2 — Reputation-based ranking (immutable-ledger + DAO lessons)
+
+- Use local telemetry and feedback to compute a **Proof-of-Quality** score: low edit distance, accepted outputs, and positive pipeline outcomes.
+- Publish anonymized quality votes to a lightweight coordinator (reusing the same free-cloud ethos as the Compute Broker — e.g. Cloudflare Workers + D1, or similar free tier). No blockchain or token required.
+- Rank adapters by empirical acceptance rate, not by claimed teacher. A "Fable 5 distillate" only stays on top if it actually wins in practice.
+- Provenance is content-addressed: a DAG of manifest hashes. Learn from immutable ledgers and DAO governance models: reputation is social/usage-based, not token-based, and governance is client-enforced rather than on-chain.
+
+### Stage 3 — Distributed sharing (DHT / P2P)
+
+- Once adapter volume justifies it, layer in a Kademlia/BitTorrent-style DHT (e.g. via `rust-libp2p`) so nodes can announce, discover, and share adapters directly.
+- Always fall back to the HTTP registry when the DHT is unreachable.
+- The Compute Broker's existing quota/bandwidth awareness should cap P2P egress to protect metered/free-tier users.
+- Keep the artifact the same (LoRA + manifest), so the distribution transport can be swapped without changing the rest of the system.
+
+### Stage 1b — Community job/salary/review pooling (optional, opt-in)
+
+> **Why this matters:** today every ATSassin instance independently discovers the same job boards, social posts, and salary signals. Crowd-sourcing this layer lets the community pool discoveries while keeping each user's profile and application data local. It is a natural extension of the community registry used for LoRA adapters.
+
+- **Shared signals, not shared PII:** only anonymized, non-attributable data about job postings, compensation ranges, company reviews, and board-detection patterns are pooled. Names, emails, resumes, and application materials never leave the local machine.
+- **Board-discovery feed:** when a user opts in, their instance can publish newly-discovered board URLs, ATS detector patterns, and social-post sources to a shared registry. Other instances consume the feed to avoid re-discovering the same starting points.
+- **Salary/review aggregation:** anonymized salary data and "post to avoid" flags can be pooled using the same content-addressed manifest + reputation mechanism as LoRA adapters. Each submission is signed by an author key and ranked by observed quality, not by popularity.
+- **Reuse the same transport:** the registry/DHT stages below already provide an HTTP registry (Stage 1) and an optional DHT (Stage 3). The job-data payload is just another manifest type in the same registry.
+- **Anti-spam / poisoning:** salary/review data is high-value and high-manipulation-risk. Before any pooled value is trusted, it must be corroborated across multiple independent instances or matched against a public source. Claims are treated as claims until corroborated.
+- **Strictly opt-in and revocable:** users enable the feed in config; they can stop contributing and/or stop consuming at any time without affecting local functionality.
+
+### Stage 4 — Volunteer local compute cooperative (BOINC-style, optional)
+
+- Users may opt in to donate idle local CPU/GPU cycles for community tasks such as LoRA evaluation, quality-gate validation, and adapter seeding.
+- This is strictly local compute only — it never routes another user's inference through a user's configured cloud API keys or free-tier quotas, and it never pools provider credentials.
+- Cooperative work units operate on anonymized or public validation sets only; they never process a user's own profile, application materials, or scraped job data.
+- The reward is not tokens or quota; it is a better set of community adapters whose quality is measured by the tool's ability to improve real-world outcomes (e.g. offer and interview conversion per application).
+- Runs only when the machine is idle, respects hardware tiers (`light`/`balanced`/`full`), and can be disabled entirely in config.
+
+### Guardrails for community sharing
+
+| Concern | Mitigation |
+|---|---|
+| **PII leakage** | Scrub training pairs of names, emails, companies, and addresses before any shared adapter is created. Shared artifacts must never contain user-specific resume data. |
+| **Malicious weights / RCE** | Accept only GGUF and Safetensors formats; reject pickled `.pt`/`.bin` files. Verify SHA-256 hashes. Consider a local sandboxed evaluation before applying an unknown adapter. |
+| **Unverifiable provenance claims** | Treat "teacher model" as a claim, not truth. Rank by observed quality. Hashes guarantee integrity of the artifact, not honesty of the claim. |
+| **Free-tier / ToS violations** | No automated sign-up for free credits. Use only user-configured providers and storage. Enforce rate/bandwidth caps in the Compute Broker. Respect storage provider ToS. |
+| **Autonomy without consent** | Sharing is opt-in. Local-first is the default; nothing is uploaded, downloaded, or applied without explicit user configuration. |
+| **Regulatory / privacy** | Any telemetry coordinator receives only anonymized quality signals, not resume text or personal data. GDPR/CCPA-style deletion is handled by not collecting PII in the first place. |
 
 ## Risks
 

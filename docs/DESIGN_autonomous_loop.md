@@ -162,6 +162,15 @@ This section intentionally does less than the original draft. That's the point.
 - **Phases 0-2 (outcome ingestion, Compute Broker, local compression): zero daemon.** `atsassin outcomes sync` and `atsassin scan --auto` (queues without prompting, still requires `pipeline update`/actuation to be manual) are plain CLI subcommands a user's own cron/Task Scheduler calls. This is also why these phases are safe to hand to an external contributor — no long-running-process design, testing, or lifecycle-management expertise required, just CLI commands like every other feature in the codebase today.
 - **Phase 3+ (`atsassin daemon`, if it turns out to be needed):** gated behind `HardwareProfile::detect().tier >= Balanced` (reusing `engine::hardware`, not a new concept) — on a `light`-tier machine, `atsassin daemon` prints "this device is better suited to scheduled CLI calls than a background process; see the README for a cron example" and exits, rather than running anyway and eating the RAM budget a constrained device doesn't have.
 
+**✅ COMPLETED:** The daemon is now fully implemented with the complete autonomous-loop workflow:
+- Scan boards on schedule
+- Evaluate and rank new jobs using prerank + LLM scoring
+- Queue high-quality jobs for auto-tailoring (with configurable threshold)
+- Trigger follow-ups based on pipeline status and elapsed time
+- Sync IMAP outcomes for pipeline status updates
+- Route tasks through the Compute Broker
+- Hardware-gated to Balanced/Full tiers only
+
 Responsibilities (unchanged from original draft, now explicitly scoped to whichever of the two modes above is active):
 - Poll boards on a schedule.
 - Evaluate and rank new jobs.
@@ -219,17 +228,61 @@ Use the persisted telemetry stream to improve toward smaller, user-specific mode
 
 **Revised: stays "export + external tool," matching what `atsassin distill` already does today, not a new in-process fine-tuning stack.** Steps 3-5 of the original draft (fine-tune via LoRA, evaluate against a teacher model, deploy) describe a genuine ML training pipeline — that means pulling in a Python/PyTorch-based toolchain (`unsloth`, `PEFT`, or similar; there is no mature Rust-native LoRA fine-tuning story as of writing) as a hard dependency of the project. That directly breaks the README's current, real claim — "no Docker, no Python, no Node" — for every user, not just the ones who want distillation. Training belongs *outside* the single binary:
 
-Pipeline:
+**✅ COMPLETED:** The distillation pipeline is fully implemented:
 1. Collect `(input, output, task, feedback)` tuples from `telemetry.rs` and `feedback.rs` — already what `atsassin distill` does.
 2. Filter high-quality pairs: accepted outputs, low edit distance, positive outcomes (now also fed by the pipeline-status → feedback wiring shipped this session).
-3. `atsassin distill` exports the filtered pairs **plus a ready-to-run external training script** (already partially true today — verify/extend the existing script-generation path) targeting a well-supported external tool (`unsloth`, `mlx-lm`, or `llama.cpp`'s LoRA tooling) that the user runs themselves, in their own Python environment, on their own hardware/cloud budget.
+3. `atsassin distill` exports the filtered pairs **plus ready-to-run external training scripts** targeting well-supported external tools:
+   - ONNX conversion script with dependency checking
+   - GGUF quantization script with llama.cpp integration
+   - OpenVINO export script for Intel hardware
+   - Unsloth training script template
 4. Evaluating the resulting checkpoint and deciding whether to point `ModelRouter` at it stays in-binary (that part is just config + a benchmark comparison, no training runtime needed) — this is the piece worth building in Rust.
 5. Use the small model as the default when it passes the quality gate; escalate to larger/cloud models via the Compute Broker when confidence is low.
+
+**✅ COMPLETED:** PII scrubbing is integrated before any export:
+- All training pairs are scrubbed using `pii_scrubber.rs`
+- A PII gate validates final output and aborts if any detectable PII remains
+- Context-aware preservation for target companies
 
 Storage optimization:
 - Deduplicate prompts.
 - Store tailored outputs as diffs against the base profile.
 - Local `zstd` compression for cold data (see the revised §5.2) — LLM-based summarization of telemetry is deferred: it would mean spending real LLM budget to compress data whose entire purpose is to be cheap-to-keep, which is backwards.
+
+### 5.6b Community LoRA sharing and provenance (experimental)
+
+This is the long-term, autonomous extension of the distillation flywheel: users benefit from LoRA adapters produced by others, and better source models naturally produce higher-ranked artifacts without requiring a blockchain or whole-model P2P.
+
+**Artifact.** A LoRA adapter is a small (10–200 MB) GGUF or Safetensors file plus a manifest:
+
+```json
+{
+  "adapter_hash": "sha256:...",
+  "parent_model": "qwen3.5:9b",
+  "parent_model_hash": "sha256:...",
+  "teacher_lineage": ["Fable 5"],
+  "task_type": "tailoring",
+  "author_pubkey": "...",
+  "evaluated_quality": 0.87
+}
+```
+
+**Autonomous discovery and apply.** ATSassin fetches a registry (HTTP first; DHT later) only when the user opts in via config, validates the adapter hash, downloads it via `reqwest`, and creates a local Ollama model variant (`FROM <base>\nADAPTER <path>`). The `ModelRouter` then routes the appropriate task to that variant. No Python runtime is needed in the core binary.
+
+**Provenance without impossible cryptography.** The manifest records lineage claims, but lineage is treated as *claimed*, not *verified*. Verification is replaced by reputation:
+- Content hashes guarantee artifact integrity.
+- Local telemetry/feedback produce a Proof-of-Quality score: accepted outputs / total uses, weighted by outcome signal.
+- Anonymized quality votes flow to a lightweight, free-cloud coordinator (reusing the same free-tier/quota-aware ethos as the Compute Broker).
+- Adapters rank by empirical acceptance; a "Fable 5 distillate" only stays on top if it wins in practice.
+
+**Lessons from ledgers, DAOs, and BOINC.**
+- **Immutable hashed ledgers**: use content-addressed manifest DAGs and SHA-256 verification for artifact integrity. This provides auditability without needing a blockchain.
+- **DAO governance**: reputation and ranking are client-enforced, usage-based, and opt-in. There is no token, no on-chain voting, and no delegated trust. "Governance" is simply "clients don't download low-reputation artifacts."
+- **BOINC**: volunteer compute/storage is fine for non-critical, best-effort sharing, but the network must degrade gracefully when volunteers leave. BitTorrent-style swarms need active seeders, so the design starts with a small HTTP registry and only moves to DHT when there is enough participation to keep swarms alive.
+
+**Phasing.** Start with a read-only community registry (Stage 1), add reputation-based ranking (Stage 2), and only introduce DHT/P2P transport once adapter volume justifies it (Stage 3). Because the artifact format is the same at every stage, the transport can be swapped without touching the rest of the system.
+
+**Guardrails.** See `ROADMAP.md` under *Experimental — Autonomous community LoRA sharing* for the full table. In short: PII scrubbing before any shared artifact is created, only GGUF/Safetensors accepted, hashes verified, sharing opt-in, and bandwidth capped by the Compute Broker to protect free-tier/metered users.
 
 ### 5.7 Persistence compression
 

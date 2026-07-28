@@ -55,6 +55,26 @@ body:
         - OpenAI
         - Anthropic
         - Not applicable
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the project does this relate to? This helps route the issue to the right maintainer.
+      options:
+        - Core CLI / scan / evaluate / tailor
+        - TUI
+        - PII / privacy
+        - Career coach / continuous polling
+        - Crowd-sourcing / community registry
+        - AI exposure / automation risk
+        - LoRA sharing / autonomous loop
+        - Docs / onboarding
+        - CI / build / packaging
+        - Other
+  - type: markdown
+    attributes:
+      value: |
+        Labels we may apply based on the area above. See `CONTRIBUTING.md` for the full labels legend.
   - type: textarea
     id: logs
     attributes:

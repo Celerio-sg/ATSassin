@@ -240,6 +240,11 @@ impl InferenceParams {
 mod tests {
     use super::*;
 
+    // Tests in this module mutate global environment variables. Run them
+    // under a single mutex so parallel execution does not cause one test to
+    // see another test's env var state.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Issue #5 - the "works on any hardware" claim is documented in the
     /// README, and `tier_for_hardware` is the line of code that makes it
     /// true on a 4GB-RAM CPU-only box (which a reviewer won't normally
@@ -248,6 +253,7 @@ mod tests {
     /// so a tier that would otherwise OOM fits.
     #[test]
     fn tier_for_hardware_clamps_context_on_small_ram_boxes() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let saved_ram = std::env::var("ATSASSIN_RAM_GB").ok();
         std::env::set_var("ATSASSIN_RAM_GB", "4");
         let profile = HardwareProfile::detect();
@@ -282,6 +288,7 @@ mod tests {
     /// profile recommends the light tier (issue #5).
     #[test]
     fn detect_recommends_light_on_4gb_cpu_only() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let saved_ram = std::env::var("ATSASSIN_RAM_GB").ok();
         let saved_gpu = std::env::var("ATSASSIN_HAS_GPU").ok();
         std::env::set_var("ATSASSIN_RAM_GB", "4");
@@ -310,6 +317,7 @@ mod tests {
     /// if the requested tier nominally allows it.
     #[test]
     fn tier_for_hardware_downgrades_quantization_on_cpu_only() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let saved_gpu = std::env::var("ATSASSIN_HAS_GPU").ok();
         std::env::set_var("ATSASSIN_HAS_GPU", "false");
         let profile = HardwareProfile::detect();
@@ -340,6 +348,7 @@ mod tests {
     /// batches and longer keep-alive to amortize model load cost.
     #[test]
     fn inference_params_are_cpu_appropriate() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let saved_gpu = std::env::var("ATSASSIN_HAS_GPU").ok();
         std::env::set_var("ATSASSIN_HAS_GPU", "false");
         let profile = HardwareProfile::detect();

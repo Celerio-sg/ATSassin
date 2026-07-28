@@ -1,9 +1,10 @@
 use crate::engine::feedback::{FeedbackAction, FeedbackTracker};
+use crate::engine::pii_scrubber::{contains_pii, scrub_text, ScrubContext};
 use anyhow::Result;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DistillationPair {
@@ -40,7 +41,8 @@ impl DistillationPipeline {
     ) -> Result<()> {
         fs::create_dir_all(output_dir)?;
 
-        let pairs = Self::generate_pairs(profile_text, roles);
+        let scrubbed_profile = scrub_text(profile_text, &ScrubContext::default()).text;
+        let pairs = Self::generate_pairs(&scrubbed_profile, roles);
 
         let jsonl_path = output_dir.join("training_data.jsonl");
         let mut buffer = String::new();
@@ -64,42 +66,176 @@ impl DistillationPipeline {
         fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
 
         // 1. Export ONNX Conversion Harness Script
-        let onnx_script = r#"# ATSassin ONNX Conversion & INT8 Quantization Harness
+        // NOTE: The generated scripts assume external ML tooling is installed.
+        // Run each script with `--check` first to validate the environment.
+        let onnx_script = r#"#!/usr/bin/env python3
+"""ATSassin ONNX Conversion & INT8 Quantization Harness.
+
+Usage:
+    python export_onnx.py <model_path_or_data_dir> [--output model.onnx]
+
+Requires:
+    pip install torch transformers optimum[onnxruntime] onnx
+"""
+import argparse
 import sys
-import json
 from pathlib import Path
 
-def convert_to_onnx(data_dir):
-    print(f"[ATSassin Distillation] Exporting student model to ONNX format from {data_dir}...")
-    onnx_file = Path(data_dir) / "model_int8.onnx"
-    print(f"[ATSassin Distillation] ONNX model exported: {onnx_file}")
+def check_dependencies():
+    missing = []
+    for pkg in ["torch", "transformers", "optimum"]:
+        try:
+            __import__(pkg)
+        except ImportError:
+            missing.append(pkg)
+    if missing:
+        print("ERROR: Missing dependencies: {}".format(", ".join(missing)))
+        print("Install with: pip install torch transformers optimum[onnxruntime] onnx")
+        sys.exit(1)
+
+check_dependencies()
+
+try:
+    from optimum.onnxruntime import ORTModelForCausalLM
+    from transformers import AutoTokenizer
+except ImportError as exc:  # pragma: no cover
+    print("ERROR: Missing dependencies. Install with:")
+    print("  pip install torch transformers optimum[onnxruntime] onnx")
+    sys.exit(1)
+
+
+def convert_to_onnx(model_path: str, output_path: str):
+    model_dir = Path(model_path)
+    if not model_dir.exists():
+        print(f"ERROR: Model path does not exist: {model_dir}")
+        sys.exit(2)
+
+    out = Path(output_path)
+    print(f"[ATSassin Distillation] Exporting student model to ONNX from {model_dir}...")
+    model = ORTModelForCausalLM.from_pretrained(model_dir, export=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    model.save_pretrained(out.parent)
+    tokenizer.save_pretrained(out.parent)
+    print(f"[ATSassin Distillation] ONNX model exported: {out}")
+
 
 if __name__ == '__main__':
-    data_dir = sys.argv[1] if len(sys.argv) > 1 else "."
-    convert_to_onnx(data_dir)
+    parser = argparse.ArgumentParser(description="Export a HuggingFace model to ONNX")
+    parser.add_argument("model_path", help="Path to the trained HuggingFace model")
+    parser.add_argument("--output", "-o", default="model.onnx", help="Output ONNX file path")
+    args = parser.parse_args()
+    convert_to_onnx(args.model_path, args.output)
 "#;
         fs::write(output_dir.join("export_onnx.py"), onnx_script)?;
 
         // 2. Export GGUF Quantization Script
         let gguf_script = r#"#!/usr/bin/env bash
 # ATSassin GGUF Quantization Tool for Low-Spec Hardware (Q4_K_M / Q6_K)
-set -e
-DATA_DIR="${1:-.}"
-echo "[ATSassin GGUF] Building Q4_K_M quantized model for sub-4GB RAM execution..."
-echo "[ATSassin GGUF] Target quantized file: ${DATA_DIR}/atsassin_student_q4_k_m.gguf"
+set -euo pipefail
+
+MODEL_PATH="${1:-}"
+QUANT="${2:-Q4_K_M}"
+
+if [[ -z "$MODEL_PATH" ]]; then
+    echo "Usage: $0 <model_path> [quantization]"
+    echo "Example: $0 ./student-109m Q4_K_M"
+    exit 1
+fi
+
+if [[ ! -d "$MODEL_PATH" ]]; then
+    echo "ERROR: Model path does not exist: $MODEL_PATH"
+    exit 2
+fi
+
+LLAMA_CPP_DIR="${LLAMA_CPP_DIR:-}"
+if [[ -n "$LLAMA_CPP_DIR" && -x "$LLAMA_CPP_DIR/convert-hf-to-gguf.py" ]]; then
+    CONVERT="$LLAMA_CPP_DIR/convert-hf-to-gguf.py"
+elif command -v convert-hf-to-gguf.py >/dev/null 2>&1; then
+    CONVERT="$(command -v convert-hf-to-gguf.py)"
+else
+    echo "ERROR: convert-hf-to-gguf.py not found. Set LLAMA_CPP_DIR or install llama.cpp."
+    exit 3
+fi
+
+OUT_DIR="$(dirname "$MODEL_PATH")"
+OUT_FILE="$OUT_DIR/atsassin_$(basename "$MODEL_PATH")_${QUANT}.gguf"
+
+echo "[ATSassin GGUF] Quantizing $MODEL_PATH to $QUANT -> $OUT_FILE"
+python "$CONVERT" --outfile "$OUT_FILE" --outtype "$QUANT" "$MODEL_PATH"
+echo "[ATSassin GGUF] Done: $OUT_FILE"
 "#;
         fs::write(output_dir.join("quantize_gguf.sh"), gguf_script)?;
 
         // 3. Export Intel OpenVINO Target Export Script (Intel Arc / Iris Xe / Core Ultra NPU)
-        let openvino_script = r#"# ATSassin Intel OpenVINO Model Optimizer (Arc / Iris Xe Acceleration)
-import sys
+        let openvino_script = r#"#!/usr/bin/env python3
+"""ATSassin Intel OpenVINO Model Optimizer (Arc / Iris Xe / Core Ultra NPU).
 
-def main():
-    print("[ATSassin OpenVINO] Compiling ONNX model to OpenVINO IR format (FP16/INT8)...")
-    print("[ATSassin OpenVINO] OpenVINO execution provider target: GPU (Intel Arc / Iris Xe)")
+Usage:
+    python openvino_export.py <model_path> [--output-dir ov_model]
+
+Requires:
+    pip install openvino transformers torch
+"""
+import argparse
+import sys
+from pathlib import Path
+
+def check_dependencies():
+    missing = []
+    for pkg in ["openvino", "transformers", "torch"]:
+        try:
+            __import__(pkg)
+        except ImportError:
+            missing.append(pkg)
+    if missing:
+        print("ERROR: Missing dependencies: {}".format(", ".join(missing)))
+        print("Install with: pip install openvino transformers torch")
+        sys.exit(1)
+
+check_dependencies()
+
+try:
+    import openvino as ov
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+except ImportError as exc:  # pragma: no cover
+    print("ERROR: Missing dependencies. Install with:")
+    print("  pip install openvino transformers torch")
+    sys.exit(1)
+
+
+def export_to_openvino(model_path: str, output_dir: str):
+    model_dir = Path(model_path)
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[ATSassin OpenVINO] Loading model from {model_dir}...")
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(model_dir)
+    model.eval()
+
+    print("[ATSassin OpenVINO] Converting to IR (FP16)...")
+    example = tokenizer("test", return_tensors="pt", padding=True)
+    ov_model = ov.convert_model(
+        model,
+        example_input=dict(example),
+        input=(
+            ov.PartialShape([1, -1]),
+        ),
+    )
+    ov.save_model(ov_model, out_dir / "openvino_model.xml")
+    tokenizer.save_pretrained(out_dir)
+    print(f"[ATSassin OpenVINO] IR saved to {out_dir}")
+
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description="Export a HuggingFace model to OpenVINO IR")
+    parser.add_argument("model_path", help="Path to the trained HuggingFace model")
+    parser.add_argument("--output-dir", "-o", default="openvino_model", help="Output directory")
+    args = parser.parse_args()
+    export_to_openvino(args.model_path, args.output_dir)
 "#;
         fs::write(output_dir.join("openvino_export.py"), openvino_script)?;
 
@@ -108,6 +244,42 @@ if __name__ == '__main__':
             pairs.len(),
             output_dir
         );
+
+        // Final PII gate: refuse to leave exported JSONL on disk if any
+        // detectable PII remains after scrubbing.
+        Self::pii_gate(output_dir)?;
+
+        Ok(())
+    }
+
+    /// Verify that no exported JSONL file in the output directory contains
+    /// PII. Removes the output directory and aborts if PII is detected.
+    fn pii_gate(output_dir: &Path) -> Result<()> {
+        let ctx = ScrubContext::default();
+        for entry in fs::read_dir(output_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if let Some(ext) = path.extension() {
+                if ext != "jsonl" && ext != "json" {
+                    continue;
+                }
+                let text = fs::read_to_string(&path)?;
+                if contains_pii(&text, &ctx) {
+                    // Copy the flagged file outside the output directory before
+                    // deleting it so the user can inspect what PII leaked and
+                    // fix the source.
+                    let flag_path = output_dir
+                        .parent()
+                        .unwrap_or(Path::new("."))
+                        .join(path.file_stem().unwrap_or_default())
+                        .with_extension("flagged.jsonl");
+                    let _ = fs::copy(&path, &flag_path);
+                    warn!("PII detected in exported file {} after scrubbing; removing output directory. Flagged copy saved to {}.", path.display(), flag_path.display());
+                    fs::remove_dir_all(output_dir)?;
+                    anyhow::bail!("Export aborted: PII detected in {}. Review your profile and feedback data.", path.display());
+                }
+            }
+        }
         Ok(())
     }
 
@@ -147,6 +319,10 @@ if __name__ == '__main__':
     /// Export high-confidence training pairs from saved feedback and the
     /// telemetry journal. Phase 5 closes the distillation loop by turning
     /// accepted or lightly-edited outputs into Alpaca-style training pairs.
+    ///
+    /// All exported pairs are scrubbed for PII before they leave the
+    /// local machine. If scrubbing cannot remove detected PII, export is
+    /// aborted.
     pub fn export_from_feedback_and_telemetry(
         db_path: &std::path::Path,
         _journal_path: &std::path::Path,
@@ -154,6 +330,7 @@ if __name__ == '__main__':
     ) -> Result<usize> {
         fs::create_dir_all(output_dir)?;
         let mut pairs = Vec::new();
+        let scrub_ctx = ScrubContext::default();
 
         // Read feedback rows where the user accepted or lightly edited the recommendation.
         if let Ok(tracker) = FeedbackTracker::new(db_path) {
@@ -167,11 +344,12 @@ if __name__ == '__main__':
                     }
                     let instruction =
                         format!("{} recommendation for job {}", ev.task_type, ev.job_id);
-                    let input = ev.recommendation_text.clone();
-                    let output = ev
-                        .edited_text
-                        .clone()
-                        .unwrap_or_else(|| ev.recommendation_text.clone());
+                    let input = scrub_text(&ev.recommendation_text, &scrub_ctx).text;
+                    let output = scrub_text(
+                        ev.edited_text.as_deref().unwrap_or(&ev.recommendation_text),
+                        &scrub_ctx,
+                    )
+                    .text;
                     pairs.push(TrainingPair {
                         instruction: instruction.clone(),
                         input,

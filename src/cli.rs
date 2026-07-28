@@ -536,6 +536,8 @@ impl Cli {
                 boards: Some(cfg.scraping.boards.clone()),
                 role: None,
                 limit: cfg.scraping.max_results_per_board,
+                tailor_threshold: 75.0,
+                max_tailor_per_tick: 3,
             };
             let mut once_cfg = daemon_cfg;
             once_cfg.interval_sec = 0;
@@ -546,6 +548,8 @@ impl Cli {
                 boards: Some(cfg.scraping.boards.clone()),
                 role: None,
                 limit: cfg.scraping.max_results_per_board,
+                tailor_threshold: 75.0,
+                max_tailor_per_tick: 3,
             };
             crate::engine::daemon::run_daemon(cfg, daemon_cfg).await
         }
@@ -1442,8 +1446,38 @@ impl Cli {
         println!("Roles inferred: {}", roles.len());
 
         if matches!(cfg.llm.provider, crate::config::LlmProvider::Lightning) {
-            println!("Lightning AI provider detected. Submitting distillation job to Lightning AI training endpoint...");
-            println!("NOTE: Lightning AI SDK integration is stubbed. In production, this would submit the JSONL to Lightning AI for training.");
+            let training_file = output_dir.join("training_pairs.jsonl");
+            if !training_file.exists() {
+                println!("Lightning AI provider selected but no training_pairs.jsonl was generated; skipping training submission.");
+            } else {
+                println!("Lightning AI provider detected. Submitting distillation job to Lightning AI training endpoint...");
+                match crate::engine::lightning::LightningClient::from_config(&cfg.llm) {
+                    Ok(client) => {
+                        match client
+                            .submit_training_job(&cfg.llm.default_model, &training_file)
+                            .await
+                        {
+                            Ok(job) => {
+                                println!(
+                                    "Lightning AI job submitted: id={} status={}",
+                                    job.id, job.status
+                                );
+                                if !job.message.is_empty() {
+                                    println!("Message: {}", job.message);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to submit Lightning AI training job: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
         }
 
         Ok(())

@@ -1,0 +1,64 @@
+name: Design proposal
+description: Propose an architectural or design change (career coach, crowd-sourcing, AI exposure, LoRA sharing, etc.)
+labels: ["design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for changes that need design review before coding. If you have a concrete bug or small feature, use the bug report or feature request templates instead.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which workstream does this belong to? See CONTRIBUTING.md for the labels legend.
+      options:
+        - Core CLI / scan / evaluate / tailor
+        - TUI
+        - PII / privacy
+        - Career coach / continuous polling
+        - Crowd-sourcing / community registry
+        - AI exposure / automation risk
+        - LoRA sharing / autonomous loop
+        - Docs / onboarding
+        - CI / build / packaging
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What are you trying to solve? Link to related issues or docs if they exist.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: What must this design respect? (local-first, opt-in, privacy, low-spec hardware, etc.)
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed design
+      description: Describe the approach. Include file/module boundaries, data flows, and config if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else was considered and why was it rejected?
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions
+      description: What are you unsure about? What would you like reviewers to focus on?
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Design checklist
+      options:
+        - label: Local-first by default
+        - label: Opt-in for any data sharing or background work
+        - label: Considers low-spec hardware profiles
+        - label: PII scrubbing plan included if data leaves the machine

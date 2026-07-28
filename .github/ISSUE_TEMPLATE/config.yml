@@ -1,5 +1,14 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Start here — find a good first issue
+    url: https://github.com/Celerio-sg/ATSassin/contribute
+    about: Curated list of small, self-contained tasks for new contributors.
+  - name: Ask a question or share an idea
+    url: https://github.com/Celerio-sg/ATSassin/discussions
+    about: Use Discussions for questions, ideas, and anything that is not a bug or feature request.
+  - name: Chat on Discord
+    url: https://discord.gg/PwwnemcAy
+    about: Casual chat, quick questions, and real-time collaboration.
   - name: Security vulnerability
     url: https://github.com/Celerio-sg/ATSassin/security/advisories/new
     about: Do not open a public issue for security reports — see SECURITY.md.

@@ -12,11 +12,17 @@ __pycache__/
 # `tests/uat/*/profile.md` fixtures the test suite depends on, since
 # unanchored gitignore patterns match at any depth.
 /config.toml
+/config.yml
 /profile.md
 /*.pdf
 /*.docx
 .DS_Store
 Thumbs.db
+
+# Demo recording artifacts (real recordings are committed to assets/, but intermediate captures and local demo DBs are not)
+/demo_data/
+/demo_capture.*
+
 
 # AI-tooling artifacts, not part of the project
 .kilo/

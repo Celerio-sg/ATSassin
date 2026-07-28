@@ -257,8 +257,10 @@ mod tests {
             quality: None,
             edit_distance: Some(5),
         };
-        logger.record_call(&call).unwrap();
-        let content = fs::read_to_string(&journal).unwrap();
+        logger
+            .record_call(&call)
+            .expect("record_call should succeed");
+        let content = fs::read_to_string(&journal).expect("journal should exist");
         assert!(content.contains("groq"));
         assert!(content.contains("test-1"));
         let _ = fs::remove_dir_all(&dir);
@@ -290,9 +292,13 @@ mod tests {
                 quality: None,
                 edit_distance: Some(10),
             };
-            logger.record_call(&call).unwrap();
+            logger
+                .record_call(&call)
+                .expect("record_call should succeed");
         }
-        let rate = logger.acceptance_rate("scoring", 24).unwrap();
+        let rate = logger
+            .acceptance_rate("scoring", 24)
+            .expect("acceptance_rate should succeed");
         assert!((rate - 1.0).abs() < 0.001);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -303,7 +309,9 @@ mod tests {
         let _ = fs::create_dir_all(&dir);
         let journal = dir.join("journal.jsonl");
         let logger = TelemetryLogger::new(&journal);
-        let avg = logger.avg_latency_ms("groq", 24).unwrap();
+        let avg = logger
+            .avg_latency_ms("groq", 24)
+            .expect("avg_latency_ms should succeed");
         assert_eq!(avg, 0.0);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -348,21 +356,27 @@ mod tests {
             quality: None,
             edit_distance: None,
         };
-        logger.record_call(&old_call).unwrap();
-        logger.record_call(&recent_call).unwrap();
+        logger
+            .record_call(&old_call)
+            .expect("record_call should succeed");
+        logger
+            .record_call(&recent_call)
+            .expect("record_call should succeed");
 
-        let archived = logger.archive_old_records(30).unwrap();
+        let archived = logger
+            .archive_old_records(30)
+            .expect("archive_old_records should succeed");
         assert_eq!(archived, 1);
 
-        let hot = fs::read_to_string(&journal).unwrap();
+        let hot = fs::read_to_string(&journal).expect("journal should exist");
         assert!(hot.contains("recent-1"));
         assert!(!hot.contains("old-1"));
 
         let archive_path = journal.with_extension("jsonl.zst");
         assert!(archive_path.exists());
-        let compressed = fs::read(&archive_path).unwrap();
-        let decoded = zstd::decode_all(&compressed[..]).unwrap();
-        let decoded_str = String::from_utf8(decoded).unwrap();
+        let compressed = fs::read(&archive_path).expect("archive should exist");
+        let decoded = zstd::decode_all(&compressed[..]).expect("zstd decode should succeed");
+        let decoded_str = String::from_utf8(decoded).expect("decoded bytes should be valid UTF-8");
         assert!(decoded_str.contains("old-1"));
 
         let _ = fs::remove_dir_all(&dir);

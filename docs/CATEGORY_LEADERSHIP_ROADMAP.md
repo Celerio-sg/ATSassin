@@ -38,7 +38,7 @@ Issue #5 (already filed) — every test this session ran on capable development 
 ### 6. Compensation and "likely to land" signals are both LLM/heuristic-only, with no ground truth
 `market rates` is pure LLM estimation (Issue #4, with an honesty disclaimer already added — good, but a disclaimer isn't a fix). The new `recommend` composite score (`engine::landscore`) is a well-reasoned heuristic, but it's untested against actual outcomes — nothing closes the loop between "ATSassin said this was a 78" and "did that job actually respond/interview/offer." Without that loop, the ranking's *credibility* rests entirely on the formula being intuitively reasonable, not on evidence it's right.
 
-**Gap:** no feedback mechanism linking `recommend`/`evaluate` scores to real outcomes. `engine::feedback` already exists for evaluate-vs-human-judgment feedback — it's not wired to pipeline status changes (Applied → Interviewing → Offered/Rejected) at all yet, which is the actual ground truth already sitting in the `pipeline` table.
+**Gap:** ✅ RESOLVED - Daemon now wires pipeline status changes to feedback tracking. `engine::feedback` is integrated with pipeline status transitions (Applied → Interviewing → Offered/Rejected), providing the ground truth loop.
 
 ### 7. Docs already drifted from shipped reality mid-session
 `README.md` has zero mentions of `recommend`, `pipeline show`, or `--location` — three features shipped in the last few hours. This isn't hypothetical decay, it already happened once in this session. If it happens this fast under active development, it will happen faster once development slows down.
@@ -57,7 +57,7 @@ The `applications` table (added this session) now holds full resume/cover-letter
 - **Resume-completeness regression test** (closes gap #3): a prompt-content test (assert the system prompt contains the completeness instruction) as a fast unit test, plus an `#[ignore]`-by-default integration test that hits a real configured provider and checks entry-count parity — run manually or in a separate opt-in CI job, not blocking every PR (keeps CI fast and free-tier-friendly).
 
 ### Next — closing the credibility loop
-- **Wire `engine::feedback` to pipeline status transitions** (closes gap #6): every `pipeline update --status` change (especially → Interviewing/Offered/Rejected) is a free, real outcome signal already flowing through the tool. Feed it back into `landscore`/`evaluate` calibration instead of leaving it siloed in the `feedback record` CLI path that requires a separate manual entry today.
+- ✅ **Wire `engine::feedback` to pipeline status transitions** (closes gap #6): COMPLETED - Daemon now wires pipeline status changes to feedback tracking. Every `pipeline update --status` change (especially → Interviewing/Offered/Rejected) is a free, real outcome signal already flowing through the tool.
 - **Quarterly competitive re-benchmark** (closes gap #2): not full manual re-runs each time — a lighter automated check (does each competitor repo still build/run at all, has its `package.json`/`Cargo.toml`/`requirements.txt` changed meaningfully since last benchmark) that flags "worth a manual re-benchmark" rather than claiming to fully automate competitive analysis.
 - **Real market-data source** (closes gap #6, = Issue #4): replace pure LLM compensation estimation with a periodically-updated static dataset as a floor, LLM estimation only as a gap-filler/adjustment on top of real numbers.
 

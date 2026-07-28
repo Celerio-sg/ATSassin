@@ -1,0 +1,34 @@
+name: Documentation improvement
+description: Something is unclear, missing, or could be explained better
+labels: ["documentation", "good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make the project easier to use. Documentation gaps are real bugs — if a feature exists but no one can discover it, it might as well not exist.
+  - type: input
+    id: page
+    attributes:
+      label: Which page/file is affected?
+      description: README, CONTRIBUTING, a specific doc under docs/, or a command help text?
+      placeholder: e.g. README.md or docs/ROADMAP.md
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or missing?
+      description: Describe the gap. If you were confused, quote the exact text that confused you.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: If you have a wording or structure in mind, propose it. Not required.
+  - type: checkboxes
+    id: willing
+    attributes:
+      label: Are you willing to open a PR?
+      options:
+        - label: Yes, I'd like to open a PR for this
