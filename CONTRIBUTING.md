@@ -36,11 +36,45 @@ Key documents to understand the direction:
 
 ## Before you start
 
-1. **Read the relevant design docs above.** New features are expected to respect a few hard rules: lightweight by default, no new hard dependencies without a strong reason, and opt-in for anything with real-world side effects.
-2. **Check the [open issues](https://github.com/Celerio-sg/ATSassin/issues).** Almost everything real and open is tracked there.
-3. **Look for the `good first issue` label** if this is your first contribution. These are scoped to be reviewable in one sitting and do not require deep familiarity with the codebase.
-4. **Check for the `blocked` label** before starting — it means the issue depends on another one landing first.
-5. **Open an issue first** if you want to work on something not yet filed. This avoids duplicate work and lets a maintainer flag anything that conflicts with the project's direction.
+### The four documents that govern this codebase
+
+Read these before writing code. Where anything else in the repo disagrees with them, they win.
+
+| Document | What it settles |
+|---|---|
+| [docs/INFLECTION_ARCHITECTURE.md](docs/INFLECTION_ARCHITECTURE.md) | Why the product moves from *ranking* to *allocating* |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Settled decisions (ADR-001…008) and **rejected** proposals (REJ-001…008) |
+| [docs/ROADMAP.md](docs/ROADMAP.md#the-critical-chain) | The build order — Step 0 blocks everything |
+| [docs/TEST_STRATEGY.md](docs/TEST_STRATEGY.md) | The five test tiers your PR is reviewed against |
+
+Per-layer specs are in [docs/design/](docs/design/). The tracking epic is [#156](https://github.com/Celerio-sg/ATSassin/issues/156) — start there.
+
+**Before proposing P2P/DHT, LMDB, Elias-Fano, or arena/CSR work, read the Rejected section of `DECISIONS.md`.** Those were evaluated in depth and rejected on their merits, with reasoning. If you have evidence that invalidates a stated reason, open an issue citing that reason — that is a genuinely welcome contribution, and better than the proposal being re-raised from scratch.
+
+### Five rules that get PRs rejected if broken
+
+These are not style preferences. Each has a live defect behind it.
+
+1. **No fabricated data** ([ADR-002](docs/DECISIONS.md)). A missing value is `None`, never a plausible substitute. A fabricated `posted_at` once made the ranking systematically prefer the sources that fabricate dates over those that report them truthfully — a fabricated default is worse than a null because it is indistinguishable from evidence downstream.
+2. **Errors propagate** ([ADR-003](docs/DECISIONS.md)). No `.unwrap_or_default()` on a fallible source call. Collapsing errors into empty results once made a network outage read as "no jobs found, try a different query".
+3. **No real-person PII** ([ADR-007](docs/DECISIONS.md)) in code, fixtures, docs, issues, comments, or commit messages — including in file and directory names. Test personas are synthetic; trial records describe a profile by *shape* only.
+4. **No constant that varies by circumstance** ([ADR-008](docs/DECISIONS.md)). Effort budgets, seniority bands, diversification caps: derived from the user's own data, or asked. A number fitted to one profile and hardcoded is a defect, not a default.
+5. **Rates carry intervals** ([ADR-005](docs/DECISIONS.md)). Any user-facing probability reports a posterior interval and a `prior_dominated` flag. Never a bare point estimate.
+
+### The standing review question
+
+> **Would this behave sensibly for a user unlike the person who wrote it?**
+
+ATSassin claims to serve everyone — any seniority, industry, market, language, career stage. The realistic threat to that is not carelessness; it is that whoever is testing supplies the concrete detail that makes a design feel well-grounded, and their circumstances get written in as universals. It has already happened once in this repo, and [#158](https://github.com/Celerio-sg/ATSassin/issues/158) tracks the cleanup.
+
+If your answer to the question above needs a caveat, the caveat is the missing parameter. **Failure to serve a profile shape is a tracked gap in the tool, never a narrowing of who the tool is for.**
+
+### Then
+
+1. **Check the [open issues](https://github.com/Celerio-sg/ATSassin/issues).** Almost everything real and open is tracked there. Milestones map to the four build steps.
+2. **Look for the `good first issue` label** if this is your first contribution. These are scoped to be reviewable in one sitting and do not require deep familiarity with the codebase.
+3. **Check for the `blocked` label** before starting — it means the issue depends on another one landing first.
+4. **Open an issue first** if you want to work on something not yet filed. This avoids duplicate work and lets a maintainer flag anything that conflicts with the project's direction.
 
 ---
 

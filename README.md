@@ -30,6 +30,19 @@ We'd love your help. This project is building a **free, autonomous earning optim
 - **Found a bug or have an idea?** [Open an issue](https://github.com/Celerio-sg/ATSassin/issues/new/choose) — no patch required.
 - **Security concern?** See [`SECURITY.md`](SECURITY.md) — please don't file it publicly.
 
+### Before you write code, read these four
+
+The architecture changed on 2026-07-29. These are the authoritative documents — where anything else in the repo disagrees with them, they win:
+
+| Document | What it settles |
+|---|---|
+| [docs/INFLECTION_ARCHITECTURE.md](docs/INFLECTION_ARCHITECTURE.md) | The adversarial review findings and why the architecture moves from *ranking* to *allocating* |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | What is decided and **what is rejected** — read the rejections before proposing P2P/DHT, LMDB, or Elias-Fano work |
+| [docs/ROADMAP.md](docs/ROADMAP.md#the-critical-chain) | The build order. Step 0 (foundation repair) blocks everything else |
+| [docs/TEST_STRATEGY.md](docs/TEST_STRATEGY.md) | The five test tiers and the contributor checklist your PR is reviewed against |
+
+Per-layer implementation specs live in [docs/design/](docs/design/).
+
 ## Demo
 
 ![ATSassin demo](assets/demo.gif)

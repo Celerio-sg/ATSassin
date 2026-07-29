@@ -40,7 +40,7 @@ None of them help a professional answer the question: *"Given what I actually kn
 
 ### The Solution
 
-ATSassin is a single 8.14 MB Rust binary that:
+ATSassin is a single 10.96 MB Rust binary that:
 
 1. **Infers** 5-10 suitable role archetypes from a single input (resume, LinkedIn export, or portfolio URL)
 2. **Scans** 11+ job surfaces concurrently (LinkedIn, Seek, Greenhouse, Lever, Ashby, HN, Reddit, RemoteOK, Wellfound, WeWorkRemotely, Indeed, social aggregators)
@@ -65,9 +65,9 @@ The need is not for "better ATS keyword optimization." It is for **continuous ea
 
 | Dimension | Current state |
 |-----------|--------------|
-| Binary size | 8.14 MB (single static binary, no runtime) |
+| Binary size | 10.96 MB (measured on a clean `--release` build, 2026-07-29) |
 | Hardware floor | 4 GB RAM, CPU-only (target — see open issue #5) |
-| Scraping surfaces | 11+ (LinkedIn, Seek, Greenhouse × ~36 companies, HN, Reddit, RemoteOK, Wellfound, WeWorkRemotely, Indeed, Ashby, Lever) |
+| Scraping surfaces | 11+ (LinkedIn, Seek, Greenhouse × 44 companies, HN, Reddit, RemoteOK, Wellfound, WeWorkRemotely, Indeed, Ashby, Lever) |
 | Evaluation rigor | 6-dimension rubric (role match, north-star alignment, compensation, cultural signals, red flags, global fit) |
 | TUI capability | Full terminal dashboard: infer, scan, evaluate, tailor, pipeline tracking |
 | Verified personas | 5 distinct profiles tested end-to-end with real, non-fabricated LLM output |
@@ -113,6 +113,10 @@ But every tool needs a first believer. The founding persona that shaped the desi
 
 This persona proves the workflow end-to-end. The architecture generalizes from there.
 
+> **⚠️ This persona is the single largest threat to the agnosticism claim above, and it has already caused a real defect.** "One good move, not fifty applications" is a *regime*, not a universal truth — it describes a selective senior candidate with time. It is wrong for an early-career candidate in a high-volume market, and wrong for anyone who needs income within weeks. A 2026-07-29 self-review found this framing and four others written into the layer specs as universals (#158, [ADR-008](DECISIONS.md)).
+>
+> The failure mode is structural rather than careless: **whoever is testing supplies the vivid, concrete detail that makes a design feel well-grounded, and their circumstances get written in as universals.** Read this persona as *the first test case*, never as the design target. The standing review question is: *would this behave sensibly for a user unlike the person who wrote it?*
+
 ### Core Values
 
 1. **Zero-barrier autonomy.** It must run without API keys, vector-DB setup, or configuration. Anything heavier is opt-in.
@@ -123,7 +127,7 @@ This persona proves the workflow end-to-end. The architecture generalizes from t
 
 ### The Founding Trial
 
-A live trial against the founder's own profile (Simon Brender — senior sales/BD/PM leader with APAC experience) ran the full workflow end-to-end: profile init → role inference → job scanning across 11 surfaces → LLM evaluation → tailoring → apply kit generation. The tool uncovered 4 contract roles (Airtable, PolyAI, PHARMExcel, Later) and produced 3 strong matches with scores ≥0.70, generating tailored resumes and cover letters for each.
+A live trial against the founder's own profile (a senior sales/BD/PM leader with APAC experience) ran the full workflow end-to-end: profile init → role inference → job scanning across 11 surfaces → LLM evaluation → tailoring → apply kit generation. The tool uncovered 4 contract roles (Airtable, PolyAI, PHARMExcel, Later) and produced 3 strong matches with scores ≥0.70, generating tailored resumes and cover letters for each.
 
 The trial revealed two things that shaped the design:
 
@@ -179,11 +183,23 @@ On 2026-07-25, 7 competitor tools were actually installed and run (not just read
 | `balanced` | `qwen3.5:9b` | 8192 | yes | 8 GB |
 | `full` | `qwen3.5:9b:q6` | 32768 | no | 16 GB |
 
+### Critical Defects Found in Adversarial Review (2026-07-29)
+
+A line-by-line adversarial review ([INFLECTION_ARCHITECTURE.md](INFLECTION_ARCHITECTURE.md)) found three P0 defects. All are scheduled as Step 0 of the critical chain, and **the architecture above should be read as aspirational until they are fixed**.
+
+1. **The PII gate does not cover the file that leaves the machine.** In `cli.rs`, the gate runs at line 1429, `training_pairs.jsonl` is written at 1435, and that file is uploaded to Lightning AI at 1457 — the only file transmitted off-device is the one never checked. The gate additionally copies flagged PII files *outside* the directory it then deletes, and its detectors are US-only (a Singapore `+65` number matches nothing). This contradicts the claim at §6.5 and §9 that the gate "validates final output."
+
+2. **Job identity is random.** All three scan paths assign v4 UUIDs, and the schema has no uniqueness constraint on `url`. The same posting scanned twice becomes two rows; the evaluation cache can never hit; the daemon re-evaluates every job every hour indefinitely at full LLM cost. A live trial on 2026-07-29 found **8 of the top 20 recommendations were duplicates of other entries**. This made continuous market-watch (#121) unshippable as designed.
+
+3. **Real-person PII in the tree.** A real individual's employment history is tracked as the `tests/uat/scenario_1_*` fixture — including in the directory name — and a second CV export sat unignored at the repo root. The root file is now gitignored; the tracked fixture must be replaced with a synthetic persona (#146). **Standing rule: no contributor's name, employers, compensation, or contact details belong in this repo or its issue tracker.** Test personas are described by shape only.
+
+Additionally, several honest-failure violations were found and are scheduled for removal: fabricated `posted_at` values that systematically promoted the sources that fabricate dates over those that report them truthfully; synthesised 0.5 evaluations persisted as real on LLM parse failure; and error-swallowing that renders a network outage as "no jobs returned, try a different query."
+
 ### Known Verification Gaps
 
 1. **Low-spec hardware claim unvalidated.** The documented 4 GB CPU-only target has not been tested on actual low-spec hardware (issue #5).
 2. **Lightning AI provider returns 401 Unauthorized.** Unconfirmed whether bug or credential issue (issue #6).
-3. **Company directory hand-maintained.** Static ~35-company list that will go stale; the permanent fix is an autonomous ATS detector (issue #1, design issue #116).
+3. **Company directory hand-maintained.** Static 44-company list that will go stale; the permanent fix is an autonomous ATS detector (issue #1, design issue #116).
 4. **--preset does not differentiate hosted providers.** On cloud providers, `--preset` only changes timeout/retry values, not model choice (issue #3).
 
 ---
@@ -257,7 +273,7 @@ Every architectural decision follows these rules, applied consistently:
 ```
 src/
 ├── main.rs                    # Entry point
-├── cli.rs                     # CLI command definitions (~50 commands)
+├── cli.rs                     # CLI command definitions (45 subcommands)
 ├── config.rs                  # Configuration + .env management
 ├── lib.rs                     # Library root
 ├── models/
@@ -370,7 +386,7 @@ This section covers every design dimension discussed and their current status. E
 
 **Current state:**
 - 11+ scraping surfaces integrated
-- Concurrent company sweep (36 companies in ~9 seconds)
+- Concurrent company sweep (44 companies in ~16-26 seconds, measured 2026-07-29)
 - Social platform scraping (HN, Reddit, RemoteOK, Wellfound, etc.)
 - Per-board rate limiting with honest empty results on failure
 
@@ -389,7 +405,7 @@ Each source is one file in `src/sources/`, registered in a `SourceManager` that 
 
 **Design direction — Autonomous company ATS detector (issue #116):**
 
-Replace the hand-maintained ~35-company list with runtime detection: fetch a company's public careers page URL, pattern-match against Greenhouse/Lever/Ashby/Workday embed shapes, and persist the detected provider. This turns "add more companies" from a permanent chore into a one-time detector.
+Replace the hand-maintained 44-company list with runtime detection: fetch a company's public careers page URL, pattern-match against Greenhouse/Lever/Ashby/Workday embed shapes, and persist the detected provider. This turns "add more companies" from a permanent chore into a one-time detector.
 
 **Issue map:** #130 (source architecture), #116 (ATS detector)
 
@@ -444,7 +460,11 @@ Extract visa, language, and experience-level constraints from job text using reg
 
 **The gap:** Salary inference today is pure LLM estimation with a hardcoded sanity ceiling. There is no real market dataset, no cross-source corroboration, and no methodology for inferring unstated ranges.
 
-**Design direction — Market baseline salary dataset (issue #119):**
+> **Superseded 2026-07-29.** The maintained dataset below is no longer the primary plan. Layer 1's extraction ladder supplies compensation **directly from the employer, per posting, with perfect provenance and zero curation** — strictly better than a baseline file that needs perpetual updating and is stale the day it ships. Issue #119 survives only as the **prior table** for the Layer 2 conversion model, never as a user-facing per-job figure. See [design/EVIDENCE_LAYER.md](design/EVIDENCE_LAYER.md) and [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md).
+>
+> Related live finding: the compensation *floor* had the same class of problem from the opposite direction — it was sourced from a help-text placeholder, with no extraction and no onboarding prompt (#155).
+
+**Superseded design direction — Market baseline salary dataset (issue #119):**
 
 A periodically-updated, lightweight JSON file (not a database, not an API) mapping role × region × seniority to baseline ranges. Sourced from:
 - Publicly available salary surveys
@@ -584,8 +604,8 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 | **0** | Local LoRA generation foundations | PII scrubber, training pair export | `atsassin distill` already functional |
 | **1** | Read-only community registry + manifest validation | Stage 0 (manifest format) | HTTP registry on free tier |
 | **2** | Proof-of-Quality reputation ranking | Stage 1 (registry) | Quality votes from telemetry |
-| **3** | DHT/P2P distribution | Stage 2 | ≥50 adapters, ≥20 seeders, ≥1000 weekly downloads |
-| **4** | Volunteer local compute cooperative (BOINC-style) | Stage 0 (evaluation units) | AC power, idle, no metered network |
+| ~~**3**~~ | ~~DHT/P2P distribution~~ | — | ❌ **REJECTED** (#49 closed) — see [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt). Adapter distribution stays on the HTTP registry indefinitely. |
+| **4** | Volunteer local compute cooperative (BOINC-style) | Stage 0 (evaluation units) | ⏸ **Deferred** (#50) — not rejected on its own merits, but its transport dependency is, and it sits far behind the critical chain |
 
 **Guardrails:**
 
@@ -600,9 +620,15 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 
 ---
 
-### 6.7 Crowd-Sourcing Layer
+### 6.7 Crowd-Sourcing Layer — ❌ REJECTED 2026-07-29
 
-**Goal:** Pool board discoveries, salary signals, and review data across users while keeping each user's profile and application data local.
+> **Rejected. Do not implement.** Issue #105 is closed; see [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt).
+>
+> Two grounds. First, it creates **new outbound data paths** while the existing one is known to leak — the PII gate does not cover the file uploaded off-device (#143), and the detectors are US-only. Building a second egress path on that foundation is the wrong order of work. Second, the architecture is **per-user by construction**: Layer 2 fits a conversion model from the user's own local outcome data, and the privacy architecture is precisely what makes that layer defensible against cloud competitors. A pooled cross-user corpus has no role in it.
+>
+> The underlying goal — better board coverage without every instance rediscovering the same sources — is met instead by the extraction ladder (#147, #148, #149), which **derives** sources rather than pooling them.
+
+**Original goal (retained as history):** Pool board discoveries, salary signals, and review data across users while keeping each user's profile and application data local.
 
 **Current state:** Every ATSassin instance independently discovers the same boards, salaries, and signals.
 
@@ -620,7 +646,11 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 
 **Goal:** Help users understand the full landscape of opportunities available to them — not just the job titles they already know — and identify paths that increase both earnings and fulfilment.
 
-**Current state:** Not implemented as a dedicated dimension. The existing role inference, preference-challenge, and market-rate features touch on this but are not yet coordinated into a coherent "awareness expansion" capability.
+> **Now delivered by Layer 3.** This dimension was previously "identified as a gap, not yet filed". It is the **allocation layer**: the diversification constraint in the min-cost flow (#152) is what mechanically surfaces adjacent opportunities, and the counterfactual re-solve (#153) is what quantifies them. See [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
+>
+> **One correction carried over from the agnosticism review (#158):** adjacency is a property of the profile, not a universal good. Generalists have high adjacency and benefit from breadth; licensed specialists (clinicians, tax attorneys, pilots) have near-zero legitimate adjacency, and early-career candidates are often harmed by breadth that reads as unfocused. The diversification cap is **derived from the profile's own archetype clustering, and a cap of 1 — no diversification — must be reachable.** "Awareness expansion" that pushes a specialist sideways is a defect, not a feature.
+
+**Current state:** Specified, not yet built. Tracked as #152 and #153.
 
 **Design direction:**
 - **Opportunity landscape expansion**: proactively surface role archetypes, industries, locations, and work arrangements the user has never searched for but that match their actual skills. This is distinct from "match me to jobs I applied for" — it is about discovering what you *could* do, not just scoring what you *did* apply for.
@@ -660,8 +690,8 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 | Element | Approach |
 |---------|---------|
 | **License** | MIT — permissive, corporate-friendly, no restrictions on use or fork |
-| **Code ownership** | `CODEOWNERS` file with area leads for major tracks (PII, career coach, crowdsourcing, AI exposure, autonomous loop) |
-| **Contribution model** | Issues with good-first-issue labels, detailed acceptance criteria, PRs reviewed by area leads |
+| **Code ownership** | `CODEOWNERS` exists but currently resolves every rule to the single maintainer; three of five area entries are commented out and two reference files that do not exist. **There are no area leads yet.** `CONTRIBUTING.md` documents the path to becoming one. |
+| **Contribution model** | Issues with good-first-issue labels and detailed acceptance criteria; PRs reviewed by the maintainer until area leads emerge |
 | **Decision making** | Technical decisions by area lead + maintainer consensus. Strategic decisions by project founder with community input. |
 | **Funding** | GitHub Sponsors (4 tiers from $5/mo to $500/mo). No corporate funding or VC dependency during early stage. |
 | **Community** | Discord for real-time chat, GitHub Discussions for ideas, Issues for tracked work. |
@@ -679,6 +709,10 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 ## 8. Milestone Roadmap
 
 ### Critical Chain (shortest path to highest value)
+
+> **Superseded as of 2026-07-29.** Phases 0–5 below describe work that has largely shipped and remain accurate as history. The **current** build order is the four-step critical chain in [ROADMAP.md](ROADMAP.md#the-critical-chain): Step 0 foundation repair → Step 1 evidence layer → Step 2 calibration layer → Step 3 allocation layer. Rationale in [INFLECTION_ARCHITECTURE.md](INFLECTION_ARCHITECTURE.md); settled and rejected decisions in [DECISIONS.md](DECISIONS.md); per-layer specs in [design/](design/); verification approach in [TEST_STRATEGY.md](TEST_STRATEGY.md).
+>
+> The strategic work-item table further below is likewise reordered by that chain — several items in it are subsumed or reframed, and three (#49, #50, #105) are now rejected. The tracker is the authority on per-issue status.
 
 Each phase is independently shippable. Phases 0-2 need no daemon, no new hard dependencies, and no cloud accounts beyond what the user already configures.
 
@@ -731,36 +765,64 @@ Each phase is independently shippable. Phases 0-2 need no daemon, no new hard de
 | 3 — DHT/P2P distribution | Peer-to-peer sharing | Stage 2 | Gated by adoption metrics |
 | 4 — Volunteer compute cooperative | BOINC-style idle compute pool | Stage 0 | Gated by safety guardrails |
 
-### Strategic Work Items (Queued)
+### Strategic Work Items — allocation table
 
-Each is captured as a GitHub issue with acceptance criteria:
+Ordered by the critical chain. **Everything in Step 0 is unblocked and can start immediately.** Layer work is blocked on Step 0 landing, because random job identity and fabricated dates make every downstream measurement untrustworthy.
 
-| Priority | Item | Issue | Dependencies |
-|----------|------|-------|-------------|
-| HIGH | Modular source architecture — trait-based pluggable sources | #130 | None |
-| HIGH | Autonomous company ATS detector — replace static board list | #116 | None |
-| HIGH | Pragmatic requirement scoring — adjacent/transferable/weighted | #132 | None |
-| HIGH | Market baseline salary dataset — lightweight JSON | #119 | None |
-| HIGH | Training dataset curation pipeline | #109 | None |
-| HIGH | Automated student model training | #110 | None |
-| HIGH | Distillation evaluation harness | #111 | None |
-| HIGH | Crowd-source role/salary/board knowledge | #105 | None |
-| HIGH | Continual landscape polling/career coaching | #106 | None |
-| MEDIUM | Job segment classifier — tag roles by industry | #133 | #130 |
-| MEDIUM | Embedding-based proximity matching | #118 | None |
-| MEDIUM | Visa/language/experience restriction parser | #117 | None |
-| MEDIUM | Cross-corpus salary corroboration | #120 | #119 |
-| MEDIUM | Continuous market-watch daemon | #121 | #119 |
-| MEDIUM | Preference-challenge insights engine | #122 | #119, #121 |
-| MEDIUM | Continuous model improvement loop | #112 | #110, #111 |
-| MEDIUM | Cross-architecture deployment targets | #113 | #110 |
-| MEDIUM | Model registry & versioning | #114 | #110 |
-| MEDIUM | Calibrate distillation against outcomes | #115 | #110, #111 |
-| LOW | Consolidate duplicate issues | #140 | None |
-| LOW | Provide onboarding wizards | #51 | None |
-| LOW | SQLite encryption-at-rest | #76 | None |
-| LOW | Configurable circuit breaker | #74 | None |
-| LOW | Structured error codes | #80 | None |
+Milestones in GitHub mirror these four groups. Tracking epic: **#156**.
+
+#### Step 0 — Foundation repair · *all unblocked, start now*
+
+| Item | Issue | Size | Blocks |
+|---|---|---|---|
+| Canonical content-addressed job IDs | **#142** | M | Everything |
+| PII gate at single pre-upload choke point | **#143** | M | Any egress work |
+| International PII detectors | #81 | S | #143 |
+| Remove fabricated data (dates, 0.5 evals, roles research) | **#144** | S | Layers 2, 3 |
+| Stop swallowing scraper errors | **#145** | S | Layer 1 |
+| Replace real-person UAT fixture | #146 | S | — |
+| Compensation floor: extract, prompt, stop defaulting | #155 | M | Layer 3 |
+| Remove OpenSSL/native-tls (3 paths) | #67 | S | — |
+| Merge prompt sanitisation into the single gate | #71 | S | #143 |
+| Profile-agnosticism corrections | #158 | L | Layers 1-3 |
+
+#### Step 1 — Evidence layer · *blocked on #142, #144, #145*
+
+| Item | Issue | Size |
+|---|---|---|
+| Tier 4: Schema.org JSON-LD — **the universal path, ship first** | **#149** | M |
+| Tier 1: CNAME enumeration | #147 | M |
+| Tier 3: `__NEXT_DATA__` SSR hydration | #148 | M |
+| Source trait expressing the ladder | #130 | L |
+| Reframed: ATS detector #116, restriction parser #117, salary corroboration #120, comp grounding #58, drift canary #68 | | |
+
+#### Step 2 — Calibration layer · *blocked on Step 1*
+
+| Item | Issue | Size |
+|---|---|---|
+| Per-user empirical-Bayes conversion model | **#150** | L |
+| Controllable vs structural decomposition (safety requirement) | **#151** | M |
+| Reframed: outcome calibration #115, local estimator #48, match taxonomy #132, prior table #119 | | |
+
+#### Step 3 — Allocation layer · *blocked on Step 2*
+
+| Item | Issue | Size |
+|---|---|---|
+| Min-cost max-flow slate generation | **#152** | L |
+| Counterfactual re-solve | **#153** | M |
+| Reframed: preference challenges #122, segment tags as diversification dimension #133, daemon as trigger #121, tracker #106 |  | |
+
+#### Independent of the chain
+
+Distillation cluster (#109–#114), LoRA Stages 0–1 (#45, #46, #47), onboarding wizard (#51), reliability and hygiene (#69–#83), low-spec validation (#73), Lightning auth (#154).
+
+#### Rejected — do not implement
+
+| Item | Issue | Reason |
+|---|---|---|
+| DHT/P2P adapter distribution | #49 closed | [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt) — DHT rate limiter is a DDoS vector |
+| Crowd-sourced role/salary/board pooling | #105 closed | [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt) — new egress path; architecture is per-user |
+| Volunteer compute cooperative | #50 deferred | Transport dependency rejected |
 
 ### Recent Fixes (Applied in Current Session)
 
@@ -808,7 +870,7 @@ Each is captured as a GitHub issue with acceptance criteria:
 | **Scraper API changes breaking scan sources** | Medium | Medium | Every scraper degrades to honest empty result on failure (verified in UAT). Board-health canary detects drift. |
 | **Compensation-estimate inaccuracy** | Medium | Medium | Seniority-aware sanity clamp in place. Real market-data source is the durable fix (issue #119). |
 | **Community trust erosion (privacy)** | Low | High | Local-first by default. Zero telemetry. MIT-licensed and open source. |
-| **Binary size growth over time** | Low | Low | LTO + strip in release profile. Currently ~9.5 MB. |
+| **Binary size growth over time** | Low | Low | LTO + strip in release profile. Currently 10.96 MB (measured 2026-07-29). |
 | **Competitor closes gap on zero-token scanning** | Medium | Medium | Autonomous ATS detector (issue #116) is the durable moat — makes the directory self-maintaining. |
 | **PII leakage through shared adapters** | Low | Critical | PII scrubber implemented. Gate validates final output. Accept only safe formats (GGUF/Safetensors). |
 | **Low-spec hardware claim false** | Medium | High | Issue #5 tracks validation. Must test on real 4 GB CPU-only machine before declaring it proven. |
@@ -830,132 +892,79 @@ The following were considered and rejected for the current design:
 
 ### Current State
 
-- **Total issues:** 128 (as of 2026-07-29, post-cleanup)
-- **Open:** 55
-- **Closed:** 73
-- **Cleanup actions applied:** 37 duplicate/stale issues closed (#43, #44, #62-#66, #84-#104, #108). Strategic items #105-#107 re-opened. Old board-health canaries consolidated to #141.
-- **Labels:** 20+ covering severity, area, and work type
+- **Open:** 63 · **Closed:** 81 (as of 2026-07-29, post-realignment)
+- **Milestones:** four, mirroring the critical chain — Step 0 (10 open), Step 1 (9), Step 2 (6), Step 3 (6)
+- **Tracking epic:** #156 — the single entry point for the next release
+- **Realignment applied 2026-07-29:** 15 issues created (#142–#156, #158), 17 reframed with explicit comments, 3 closed as rejected (#49, #105, and #50 deferred), 5 closed as duplicates (#5, #57, #59, #60, #61), 1 closed as delivered (#107)
 
-### Issue Hierarchy
+### Issue Map (allocation-ready)
+
+Everything in Step 0 is **unblocked**. Layer work is blocked until Step 0 lands, because random job identity and fabricated dates make every downstream measurement untrustworthy.
 
 ```
-Tracking Issues (epics / containers)
-├── #18 — Autonomous closed-loop job & income optimization
-├── #45 — Autonomous community LoRA sharing, provenance & volunteer compute cooperative
-├── #107 — Comprehensive codebase and roadmap completeness review
+#156 — TRACKING EPIC: next release (start here)
 
-Phase Implementations (shipped phases 0-2)
-├── #19 — Phase 0: IMAP connection + OS-keychain credential storage ✅
-├── #20 — Phase 0: Rejection/interview/offer email classification ✅
-├── #21 — Phase 0: Wire outcomes into pipeline status + feedback ✅
-├── #22 — Phase 0: `atsassin outcomes sync` CLI command ✅
-├── #23 — Phase 1: Compute Broker core ✅
-├── #24 — Phase 1: Provider self-reported quota parsing ✅
-├── #25 — Phase 1: `atsassin compute status` CLI command ✅
-├── #26 — Phase 1: Wire Compute Broker into --preset ✅
-├── #27 — Phase 2: Local zstd compression for old telemetry rows ✅
-├── #28 — Phase 3: `atsassin daemon` background orchestrator ✅
-├── #29 — Phase 4: Assisted browser form-filling (no auto-submit) ✅
-├── #30 — Phase 5: Distillation: export training pairs + external script ✅
+Step 0 — Foundation repair  [MILESTONE, all unblocked]
+├── #142  Canonical content-addressed job IDs           P0, M
+├── #143  PII gate at single pre-upload choke point     P0, M
+├── #144  Remove fabricated data                        S
+├── #145  Stop swallowing scraper errors                S
+├── #146  Replace real-person UAT fixture               S, good first issue
+├── #155  Compensation floor: extract/prompt/no default M
+├── #158  Profile-agnosticism corrections               L
+├── #81   International PII detectors                   S, good first issue
+├── #67   Remove OpenSSL/native-tls (3 paths)           S
+└── #71   Merge prompt sanitisation into the gate       S
 
-Critical Red-Team Fixes
-├── #63 — CRITICAL: Distillation conversion scripts are stubs 🔧 Code fixed, see note below
-├── #64 — CRITICAL: Lightning AI integration is stubbed 🔧 Code fixed, see note below
-├── #65 — HIGH: Daemon is scan-only and not full orchestrator 🔧 Code fixed, see note below
-├── #66 — HIGH: PII scrubbing missing from LoRA sharing pipeline 🔧 Code fixed, see note below
-├── #67 — HIGH: OpenSSL dependency via `imap` crate
-├── #68 — HIGH: Board-health canary for scraper drift detection
-├── #69 — MEDIUM: Startup validation of required secrets
-├── #70 — MEDIUM: Health check command
-├── #71 — MEDIUM: Prompt input sanitization
-├── #72 — MEDIUM: README sync check in CI
-├── #73 — MEDIUM: Validate low-spec/CPU-only hardware claim
-├── #74-#83 — LOW: Various hardening (circuit breaker, telemetry, encryption, etc.)
+Step 1 — Evidence layer  [MILESTONE, blocked on #142/#144/#145]
+├── #149  Tier 4: Schema.org JSON-LD  ← ship first, universal path
+├── #147  Tier 1: CNAME enumeration
+├── #148  Tier 3: __NEXT_DATA__ SSR hydration
+├── #130  Source trait expressing the ladder
+└── reframed: #116 ATS detector · #117 restriction parser
+             #120 salary corroboration · #58 comp grounding
+             #68 drift canary (tier-fallthrough)
 
-Performance & Community Fixes
-├── #89 — Board-health canary
-├── #90 — Startup validation of required secrets
-├── #91 — `atsassin health` command
-├── #92 — Sanitize user-provided text before LLM prompts
-├── #93 — README sync check to CI
-├── #94 — Validate low-spec hardware claim
-├── #95 — Configurable circuit breaker parameters
-├── #96 — Circuit breaker metrics in telemetry
-├── #97 — SQLite encryption-at-rest
-├── #98 — Database connection pool evaluation
-├── #99 — Disk space monitoring
-├── #100 — Remove `.expect()` in HTTP clients
-├── #101 — Structured error codes
-├── #102 — Expand PII scrubber for international formats
-├── #103 — Document all environment variables
-├── #104 — Configuration backup and rollback
+Step 2 — Calibration layer  [MILESTONE, blocked on Step 1]
+├── #150  Per-user empirical-Bayes conversion model
+├── #151  Controllable vs structural decomposition (safety requirement)
+└── reframed: #115 outcome calibration · #48 local estimator
+             #132 match taxonomy · #119 prior table only
 
-Strategic Work Items
-├── #105 — Crowd-source role, salary and job-board knowledge
-├── #106 — Continual job-landscape polling and career coaching insights
+Step 3 — Allocation layer  [MILESTONE, blocked on Step 2]
+├── #152  Min-cost max-flow slate generation
+├── #153  Counterfactual re-solve
+└── reframed: #122 preference challenges · #133 segment tags
+             #121 daemon as trigger · #106 tracker
 
-Deep Design Issues
-├── Distillation Pipeline
-│   ├── #109 — Training dataset curation pipeline
-│   ├── #110 — Automated student model training workflow
-│   ├── #111 — Distillation evaluation harness & benchmark
-│   ├── #112 — Continuous model improvement loop
-│   ├── #113 — Cross-architecture deployment targets
-│   ├── #114 — Model registry & versioning
-│   ├── #115 — Calibrate distillation against real outcomes
-│   └── (closed duplicates: #123-#129)
-├── Sourcing Architecture
-│   ├── #130 — Modular source architecture (trait-based sources)
-│   ├── #116 — Autonomous company ATS detector
-│   └── (closed duplicate: #131)
-├── Pragmatic Matching
-│   ├── #132 — Pragmatic requirement scoring (adjacent/transferable)
-│   ├── #133 — Job segment classifier
-│   ├── #117 — Visa/language/experience restriction parser
-│   ├── #118 — Embedding-based proximity matching
-│   └── (closed duplicate: #134)
-├── Salary Inference
-│   ├── #119 — Market baseline salary dataset
-│   ├── #120 — Cross-corpus salary corroboration
-│   └── (closed duplicates: #135-#136)
-├── Career Coach
-│   ├── #121 — Continuous market-watch daemon
-│   ├── #122 — Preference-challenge insights engine
-│   └── (closed duplicates: #137-#139)
-└── Housekeeping
-    ├── #140 — Consolidate duplicate issues
-    └── #141 — Board-health canary
+Independent of the chain
+├── Distillation: #109 #110 #111 #112 #113 #114
+├── LoRA Stages 0-1: #45 (tracker) #46 #47
+├── Matching: #118 embedding cosine fix
+├── Onboarding: #51 provider wizard · #52 broker hardening
+├── Reliability/hygiene: #69 #70 #72 #74-#83
+├── #73  Low-spec hardware validation (largest unbacked claim)
+├── #154 Lightning auth defect (user-id env var never read)
+└── #55 awesome lists · #53 first-timer welcome
 
-Experimental / Long-term
-├── #46 — Stage 0: Local LoRA generation foundation
-├── #47 — Stage 1: Read-only community registry + manifest validation
-├── #48 — Stage 2: Proof-of-Quality reputation ranking
-├── #49 — Stage 3: DHT/P2P LoRA adapter distribution
-├── #50 — Stage 4: Volunteer local compute cooperative (BOINC-style)
-├── #51 — Provider onboarding/recommendation wizard
-├── #52 — Harden ComputeBroker paid-fallback and route_task policy ✅
-
-Early Issues
-├── #1-#17 — Mostly closed (scraper fixes, APAC support, CI, company directory). 
-│                 #5 (low-spec validation) and #6 (Lightning AI 401) remain OPEN.
-├── #55 — Submit ATSassin to awesome lists [OPEN]
-├── #56 — Launch ATSassin publicly [CLOSED]
-├── #57 — Validate low-spec hardware claim [OPEN]
-├── #58 — Replace LLM compensation estimation with real market data [OPEN]
-├── #59 — Implement provider onboarding wizard [OPEN]
-├── #60 — Implement local LoRA generation foundation [OPEN]
-├── #61 — Build read-only registry with manifest validation [OPEN]
+Rejected — do not implement (see docs/DECISIONS.md)
+├── #49  DHT/P2P adapter distribution     REJ-001, closed
+├── #105 Crowd-sourced pooling            REJ-001, closed
+└── #50  Volunteer compute cooperative    deferred (transport rejected)
 ```
 
 ### Label Taxonomy
 
 | Label Category | Labels |
 |---------------|--------|
-| **Severity** | CRITICAL, HIGH, MEDIUM, LOW |
-| **Area** | area:matching, area:sourcing, area:ai, area:models, area:coach, area:crowdsource, area:exposure, area:pii, area:schema |
+| **Architecture (added 2026-07-29)** | `step-0-foundation`, `layer-1-evidence`, `layer-2-calibration`, `layer-3-allocation`, `rejected`, `tracking` |
+| **Severity** | CRITICAL, HIGH, MEDIUM, LOW (in issue titles, not labels) |
+| **Area** | area:matching, area:sourcing, area:models, area:privacy, area:security, area:llm, area:daemon, area:scraper, area:cli, area:config, area:ci, area:hardware, area:telemetry, area:performance, area:errors, area:reliability, area:schema, area:distillation |
 | **Design** | design:autonomous-loop, design:career-coach |
-| **Work type** | good first issue, help wanted, enhancement, bug, documentation, design, blocked |
-| **Tracking** | canary, tracking |
+| **Work type** | good first issue, help wanted, enhancement, bug, documentation, blocked |
+| **Value** | analytics, user-value, community, privacy, audit |
+
+The four architecture labels also exist as **GitHub milestones**, which are the unit to allocate against.
 
 ---
 
@@ -966,6 +975,8 @@ Early Issues
 | 1.0 | 2026-07-29 | ATSassin (Buffy) | Initial comprehensive review for venture/board discussion |
 | 1.1 | 2026-07-29 | ATSassin (Buffy) | Corrected positioning: broadened from 'career transition engine for AI-displaced workers' to 'universal earning optimizer for everyone.' Three-factor problem framing (AI, complacency, unawareness) throughout. Reframed 6.8 to Career Awareness & Fulfillment. Updated persona, founding trial, and open questions to match. |
 | 1.2 | 2026-07-29 | ATSassin (Buffy) | Updated README.md and ROADMAP.md to match new positioning. README now opens with the three-enemy framing. ROADMAP mission block added. |
+| 2.0 | 2026-07-29 | Adversarial review | **Architecture reset: ranking → allocating.** Three P0 defects recorded in §3 (PII gate misses the uploaded file; random job identity; real-person PII in the tree). §6.3 salary dataset superseded by employer-supplied extraction. §6.7 crowd-sourcing and Stage 3 DHT rejected with reasoning. §6.8 now delivered by Layer 3. §8 strategic table replaced with an allocation table ordered by the critical chain. §10 issue map rebuilt. Numeric corrections: binary 10.96 MB (was 8.14 / ~9.5), 44 companies (was ~35/36), 45 CLI commands (was ~50). CODEOWNERS governance claim corrected — there are no area leads. New: [INFLECTION_ARCHITECTURE.md](INFLECTION_ARCHITECTURE.md), [DECISIONS.md](DECISIONS.md), [TEST_STRATEGY.md](TEST_STRATEGY.md), [design/](design/). |
+| 2.1 | 2026-07-29 | Agnosticism self-review | Found founding-persona assumptions written into the layer specs as universals (#158, ADR-008): effort budget, diversification value, structural-factor list, Western-only ATS coverage, English-only detection, and a single-profile result presented as validation. Corrected in the specs; warning added to the founding-persona block in §2; Tier 3b profile-shape matrix added to the test strategy as an agnosticism gate. |
 
 ---
 

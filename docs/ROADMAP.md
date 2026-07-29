@@ -10,7 +10,7 @@
 
 - Profile parsing (Markdown/plain-text resumes, LinkedIn export CSVs, DOCX)
 - Local-relevance role inference and pipeline tracking (SQLite), evaluate and tailor via any OpenAI-compatible provider (Groq, Ollama, Kimi, GLM, Lightning, etc.)
-- Job discovery: LinkedIn guest API, Seek, single-company Greenhouse/Lever/Ashby lookups, a curated **concurrent zero-token sweep across ~35 companies' public Greenhouse APIs** (`--boards companies`), plus a social/aggregator sweep (HN, Reddit, RemoteOK, WeWorkRemotely, etc.)
+- Job discovery: LinkedIn guest API, Seek, single-company Greenhouse/Lever/Ashby lookups, a curated **concurrent zero-token sweep across 44 companies' public Greenhouse APIs** (`--boards companies`), plus a social/aggregator sweep (HN, Reddit, RemoteOK, WeWorkRemotely, etc.)
 - A full TUI dashboard: live role inference, scan, evaluate, and tailor, all triggerable from within the TUI, with a real pipeline summary and activity log
 - Verified end-to-end for 5 realistic, diverse personas (see UAT report) with zero crashes and non-fabricated output
 
@@ -18,7 +18,7 @@
 
 These are real, currently-open items, not resolved yet:
 
-1. **The curated company-to-board directory (`src/pipeline/company_directory.rs`) is a maintenance liability, not just incomplete.** It's currently a flat, hand-maintained list of ~35 company/slug pairs. Even fully filled out, which company sits on which ATS (Greenhouse/Lever/Ashby/Workable) changes constantly as companies migrate providers, so a static list goes stale within months regardless of how many entries it has. **Better direction (raised in community review):** derive the directory instead of maintaining it — fetch a company's public careers page and pattern-match the embedded board URL (Greenhouse/Lever/Ashby/Workable each have a recognizable embed/redirect shape) to detect which provider and slug they use. This turns "add more companies" from a permanent, weekly-recurring chore into a one-time detector. **Good first issue** in the meantime: adding more company/slug pairs to the existing list is still useful and needs no architecture change — just lower-leverage than the detector.
+1. **The curated company-to-board directory (`src/pipeline/company_directory.rs`) is a maintenance liability, not just incomplete.** It's currently a flat, hand-maintained list of 44 company/slug pairs. Even fully filled out, which company sits on which ATS (Greenhouse/Lever/Ashby/Workable) changes constantly as companies migrate providers, so a static list goes stale within months regardless of how many entries it has. **Better direction (raised in community review):** derive the directory instead of maintaining it — fetch a company's public careers page and pattern-match the embedded board URL (Greenhouse/Lever/Ashby/Workable each have a recognizable embed/redirect shape) to detect which provider and slug they use. This turns "add more companies" from a permanent, weekly-recurring chore into a one-time detector. **Good first issue** in the meantime: adding more company/slug pairs to the existing list is still useful and needs no architecture change — just lower-leverage than the detector.
 2. **`--preset` (lightweight/balanced/full) has no effect on model choice when using a hosted cloud provider** — it only changes timeout/retry/scrape-limit values. The hardware-adaptive tiering system only differentiates behavior when running against local Ollama. This should either be documented more prominently or extended so cloud presets pick different model *sizes* per tier (e.g. a cheaper/faster Groq model for `lightweight`).
 3. **Compensation estimates are model-generated and can still be wrong even after the seniority-aware sanity clamp** added in this pass (see `role_inference.rs`) — treat `market rates`/inferred compensation bands as a rough guide, not authoritative data. A real market-data source (even a periodically-updated static dataset) would be a meaningful accuracy improvement over pure LLM estimation.
 4. **No genuine low-spec/CPU-only hardware was used to validate the "works on any hardware" claim** — testing so far has been on capable development hardware. Needs validation on an actual 4GB-RAM/CPU-only machine.
@@ -27,11 +27,43 @@ These are real, currently-open items, not resolved yet:
 
 ## Roadmap
 
-### Now
-- Company-directory-as-detector (see gap #1 above) — replaces a permanently-stale hand-maintained list with something derived from each company's own careers page.
-- Cloud-provider model tiering for `--preset` (gap #2).
+> **Read this first.** The roadmap below is superseded in ordering by the architecture agreed on 2026-07-29. See [INFLECTION_ARCHITECTURE.md](INFLECTION_ARCHITECTURE.md) for the reasoning, [DECISIONS.md](DECISIONS.md) for what is settled and what is rejected, and the three layer specs in [design/](design/). The critical chain immediately below is the authoritative build order. Where anything further down this file disagrees with it, the critical chain wins.
 
-### Next — Career Coaching (flagship feature — attacking all three enemies)
+### The critical chain
+
+Each step is worthless without its predecessor. This ordering is forced, not preferential.
+
+#### Step 0 — Foundation repair (blocking; nothing else is trustworthy until this lands)
+
+- **Canonical content-addressed job IDs** replacing random v4 UUIDs ([ADR-001](DECISIONS.md#adr-001--job-identity-is-content-addressed-never-random)). Today the same posting scanned twice becomes two rows, the evaluation cache can never hit, and the daemon re-evaluates every job every hour forever. A live trial on 2026-07-29 found **8 of the top 20 recommendations were duplicates**.
+- **PII gate at a single pre-upload choke point**, plus international detectors ([ADR-002](DECISIONS.md#adr-002--missing-data-is-represented-as-missing-never-as-a-plausible-default)). The file currently uploaded to Lightning AI is written *after* the only gate runs and is never checked.
+- **Delete fabricated data**: `posted_at = Utc::now()`, fallback 0.5 evaluations, the hardcoded `roles research` archetype.
+- **Stop swallowing scraper errors** ([ADR-003](DECISIONS.md#adr-003--errors-propagate-they-are-not-collapsed-into-empty-results)) — a network outage is currently reported as "no jobs found, try a different query".
+- **Remove OpenSSL/native-tls** (#67) — still present via three paths.
+
+#### Step 1 — Evidence layer → [design/EVIDENCE_LAYER.md](design/EVIDENCE_LAYER.md)
+
+Tiered extraction ladder: CNAME enumeration → ATS JSON APIs → `__NEXT_DATA__` SSR hydration → Schema.org JSON-LD. Supplies real posting dates, real compensation, and structured restriction fields.
+
+Closes #116, #58, #117, and **replaces** the maintained salary dataset in #119 — employer-supplied compensation has perfect provenance and needs no curation.
+
+#### Step 2 — Calibration layer → [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md)
+
+Per-user empirical-Bayes conversion model fitted from data already captured (`edit_distance`, submission latency, pipeline/IMAP outcomes). Mandatory shrinkage toward published priors, interval reporting, and controllable-vs-structural factor decomposition.
+
+Reframes #115, #48, #132; #119 survives only as the prior table.
+
+#### Step 3 — Allocation layer → [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md)
+
+Min-cost max-flow slate generation: weekly effort budget, role-archetype diversification caps, `−log P(callback)` costs with age decay. Counterfactual re-solve replaces the heuristic preference-challenge engine.
+
+Reframes #122, #133, #121, #106.
+
+### Also open (independent of the chain)
+- Cloud-provider model tiering for `--preset` (gap #2), plus the `config.rs` tier-collapse bug that currently forces all three tiers to one model.
+- Low-spec hardware validation (#5/#57/#73) — the largest unbacked claim in the project.
+
+### Career Coaching — the destination (delivered by Steps 2 and 3)
 
 A built-in career coaching mode that goes beyond "find and tailor applications for the job you already know you want." This is the feature that makes ATSassin an earning coach rather than just an application optimizer, attacking all three enemies at once:
 
@@ -87,14 +119,23 @@ Extends the existing `atsassin distill` command:
 - Rank adapters by empirical acceptance rate, not by claimed teacher. A "Fable 5 distillate" only stays on top if it actually wins in practice.
 - Provenance is content-addressed: a DAG of manifest hashes. Learn from immutable ledgers and DAO governance models: reputation is social/usage-based, not token-based, and governance is client-enforced rather than on-chain.
 
-### Stage 3 — Distributed sharing (DHT / P2P)
+### Stage 3 — Distributed sharing (DHT / P2P) — ❌ REJECTED 2026-07-29
 
-- Once adapter volume justifies it, layer in a Kademlia/BitTorrent-style DHT (e.g. via `rust-libp2p`) so nodes can announce, discover, and share adapters directly.
-- Always fall back to the HTTP registry when the DHT is unreachable.
-- The Compute Broker's existing quota/bandwidth awareness should cap P2P egress to protect metered/free-tier users.
-- Keep the artifact the same (LoRA + manifest), so the distribution transport can be swapped without changing the rest of the system.
+**Do not implement. See [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt) before proposing any variant of this.**
 
-### Stage 1b — Community job/salary/review pooling (optional, opt-in)
+Rejected on four grounds, the first of which is disqualifying on its own: a DHT-coordinated politeness/rate-limit mechanism is a DDoS vector, because the protected resource (the target web server) sits outside the trust boundary and no honest-majority assumption can protect a non-participant. It also inverts the privacy architecture by making every user a publisher of scraped third-party PII, requires PoW node-ID generation that contradicts the 4 GB hardware floor, and has inverted bootstrap economics.
+
+Adapter distribution stays on the HTTP registry (Stage 1) indefinitely.
+
+### Stage 1b — Community job/salary/review pooling — ❌ REJECTED 2026-07-29
+
+> **Rejected. Issue #105 is closed.** See [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt).
+>
+> Two grounds. It creates **new outbound data paths** while the existing one is known to leak (#143), which is the wrong order of work. And the architecture is **per-user by construction** — Layer 2 fits a conversion model from the user's own local outcome data, and that privacy property is exactly what makes the feature defensible against cloud competitors. A pooled corpus has no role in it.
+>
+> The underlying goal — better board coverage without every instance rediscovering the same sources — is met by the extraction ladder (#147, #148, #149), which **derives** sources rather than pooling them.
+
+**Original design (retained as history):**
 
 > **Why this matters:** today every ATSassin instance independently discovers the same job boards, social posts, and salary signals. Crowd-sourcing this layer lets the community pool discoveries while keeping each user's profile and application data local. It is a natural extension of the community registry used for LoRA adapters.
 
@@ -131,7 +172,7 @@ Extends the existing `atsassin distill` command:
 | LLM provider rate limits / outages | Medium | High | Multi-provider fallback, already implemented; offline/local-model mode via Ollama |
 | Scraper/ATS-API changes breaking scan sources | Medium | Medium | Every scraper degrades to an honest empty result on failure, never fabricates (verified in UAT) |
 | Compensation-estimate inaccuracy | Medium | Medium | Seniority-aware sanity clamp in place (this pass); real market-data source is the durable fix (gap #3) |
-| Binary size growth | Low | Low | LTO + strip already in `[profile.release]`; currently ~9.5MB |
+| Binary size growth | Low | Low | LTO + strip already in `[profile.release]`; currently 10.96MB (measured 2026-07-29) |
 | Community trust (privacy) | Low | High | Local-first by default, no telemetry beyond opt-in local logging, MIT-licensed and open source |
 
 ## Ethical Considerations
@@ -139,5 +180,5 @@ Extends the existing `atsassin distill` command:
 1. **Privacy by design**: ATSassin runs locally by default. No resume data leaves the machine unless the user explicitly configures a cloud LLM provider.
 2. **Transparency**: LLM calls are logged locally (`*.llm_telemetry.jsonl`); users can audit exactly what was sent and received.
 3. **No automation overreach**: ATSassin recommends, evaluates, and tailors — it does not auto-apply on a user's behalf without explicit action, and any future application-automation feature (see Later) must stay opt-in and per-application confirmed.
-4. **Accessibility**: free, lightweight (~9.5MB, no GPU or Python/Node runtime required), designed to run on modest hardware — not a subscription SaaS product.
+4. **Accessibility**: free, lightweight (10.96MB, no GPU or Python/Node runtime required), designed to run on modest hardware — not a subscription SaaS product.
 5. **Honesty over impressiveness**: this project has a documented history (see UAT report) of finding and removing fabricated/placeholder output disguised as real functionality. That standard should hold for all future contributions — an empty, honestly-labeled result is always preferable to a fabricated one.
