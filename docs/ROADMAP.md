@@ -127,7 +127,15 @@ Rejected on four grounds, the first of which is disqualifying on its own: a DHT-
 
 Adapter distribution stays on the HTTP registry (Stage 1) indefinitely.
 
-### Stage 1b — Community job/salary/review pooling (optional, opt-in)
+### Stage 1b — Community job/salary/review pooling — ❌ REJECTED 2026-07-29
+
+> **Rejected. Issue #105 is closed.** See [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt).
+>
+> Two grounds. It creates **new outbound data paths** while the existing one is known to leak (#143), which is the wrong order of work. And the architecture is **per-user by construction** — Layer 2 fits a conversion model from the user's own local outcome data, and that privacy property is exactly what makes the feature defensible against cloud competitors. A pooled corpus has no role in it.
+>
+> The underlying goal — better board coverage without every instance rediscovering the same sources — is met by the extraction ladder (#147, #148, #149), which **derives** sources rather than pooling them.
+
+**Original design (retained as history):**
 
 > **Why this matters:** today every ATSassin instance independently discovers the same job boards, social posts, and salary signals. Crowd-sourcing this layer lets the community pool discoveries while keeping each user's profile and application data local. It is a natural extension of the community registry used for LoRA adapters.
 
