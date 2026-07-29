@@ -457,9 +457,7 @@ mod tests {
     /// Invariant 8. Off-by-one in the budget.
     #[test]
     fn invariant_8_budget_of_one() {
-        let cands: Vec<_> = (0..5)
-            .map(|i| c(&format!("p{i}"), "f", 0.5, 0.0))
-            .collect();
+        let cands: Vec<_> = (0..5).map(|i| c(&format!("p{i}"), "f", 0.5, 0.0)).collect();
         assert_eq!(solve(&cands, &params(1, 0.05, 9)).selected.len(), 1);
     }
 
@@ -470,9 +468,7 @@ mod tests {
     /// applications; equality must go to slack.
     #[test]
     fn zero_floor_does_not_select_worthless_postings() {
-        let cands: Vec<_> = (0..7)
-            .map(|i| c(&format!("z{i}"), "f", 0.0, 0.0))
-            .collect();
+        let cands: Vec<_> = (0..7).map(|i| c(&format!("z{i}"), "f", 0.0, 0.0)).collect();
         let s = solve(&cands, &params(7, 0.0, 9));
         assert!(
             s.selected.is_empty(),
@@ -490,8 +486,16 @@ mod tests {
     /// tests, because none of them pinned the bad-fit value.
     #[test]
     fn bad_decay_fit_is_rejected_not_treated_as_fresh() {
-        assert_eq!(decay(8.0, -7.0), None, "negative half-life must be rejected");
-        assert_eq!(decay(0.0, 0.0), None, "zero half-life yields NaN; reject it");
+        assert_eq!(
+            decay(8.0, -7.0),
+            None,
+            "negative half-life must be rejected"
+        );
+        assert_eq!(
+            decay(0.0, 0.0),
+            None,
+            "zero half-life yields NaN; reject it"
+        );
         assert_eq!(decay(1.0, f64::NAN), None, "NaN half-life must be rejected");
         // +inf is different: no decay at all is the correct limit.
         assert_eq!(decay(50.0, f64::INFINITY), Some(1.0));
@@ -502,10 +506,18 @@ mod tests {
     #[test]
     fn bad_fit_does_not_let_an_ancient_posting_win() {
         let cands = vec![c("ancient", "f", 0.10, 365.0), c("new", "f", 0.10, 1.0)];
-        let good = Params { budget: 1, p_min: 0.01, half_life_days: 7.0, family_cap: 9 };
+        let good = Params {
+            budget: 1,
+            p_min: 0.01,
+            half_life_days: 7.0,
+            family_cap: 9,
+        };
         assert_eq!(solve(&cands, &good).selected, vec!["new"]);
 
-        let bad = Params { half_life_days: -7.0, ..good.clone() };
+        let bad = Params {
+            half_life_days: -7.0,
+            ..good.clone()
+        };
         let s = solve(&cands, &bad);
         assert!(
             s.selected.is_empty(),
@@ -529,7 +541,10 @@ mod tests {
             .skipped
             .iter()
             .any(|(id, r)| id == "nan_p" && *r == Skipped::Unusable));
-        assert!(s.expected_callbacks.is_finite(), "a NaN poisoned the objective");
+        assert!(
+            s.expected_callbacks.is_finite(),
+            "a NaN poisoned the objective"
+        );
     }
 
     /// The cap is a per-family *maximum*: 1 forces maximum spread,
@@ -572,14 +587,22 @@ mod tests {
             .collect();
 
         let starved = solve(&cands, &params(7, 0.05, 1));
-        assert_eq!(starved.selected.len(), 6, "6 families at cap 1 strand a unit");
+        assert_eq!(
+            starved.selected.len(),
+            6,
+            "6 families at cap 1 strand a unit"
+        );
 
         let cap = min_feasible_cap(7, &[2, 1, 1, 1, 1, 1]);
         let extra = c("p6", "f0", 0.5, 0.0);
         let mut with_extra = cands.clone();
         with_extra.push(extra);
         let ok = solve(&with_extra, &params(7, 0.05, cap));
-        assert_eq!(ok.selected.len(), 7, "the floor must let the budget be spent");
+        assert_eq!(
+            ok.selected.len(),
+            7,
+            "the floor must let the budget be spent"
+        );
     }
 
     /// Every non-selected candidate carries a reason. A slate without
@@ -593,8 +616,10 @@ mod tests {
         ];
         let s = solve(&cands, &params(5, 0.05, 1));
         assert_eq!(s.selected.len() + s.skipped.len(), cands.len());
-        assert!(s.skipped.iter().any(|(id, r)| id == "capped"
-            && *r == Skipped::FamilyCapReached));
+        assert!(s
+            .skipped
+            .iter()
+            .any(|(id, r)| id == "capped" && *r == Skipped::FamilyCapReached));
         assert!(s
             .skipped
             .iter()

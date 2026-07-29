@@ -180,8 +180,7 @@ pub fn beta_cdf(a: f64, b: f64, x: f64) -> f64 {
     if x >= 1.0 {
         return 1.0;
     }
-    let bt =
-        (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln()).exp();
+    let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln()).exp();
     if x < (a + 1.0) / (a + b + 2.0) {
         bt * betacf(a, b, x) / a
     } else {
@@ -264,11 +263,7 @@ mod tests {
             .map(|&n| prior_weight(STRENGTH, n))
             .collect();
         for pair in ws.windows(2) {
-            assert!(
-                pair[1] < pair[0],
-                "prior weight did not decrease: {:?}",
-                ws
-            );
+            assert!(pair[1] < pair[0], "prior weight did not decrease: {:?}", ws);
         }
         assert!((ws[1] - 0.625).abs() < 1e-12);
     }
