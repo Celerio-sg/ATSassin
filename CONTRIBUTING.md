@@ -27,15 +27,7 @@ The current focus is the four-step critical chain: repair the foundation, then b
 
 A smaller, experimental **LoRA-sharing** track also exists (Stages 0–1 only: local adapter generation and a read-only HTTP registry). Its later stages were rejected — see below.
 
-### Current documents
-
-| Document | What it is |
-|---|---|
-| [`docs/INFLECTION_ARCHITECTURE.md`](docs/INFLECTION_ARCHITECTURE.md) | Why the architecture is what it is |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | ADR-001…009 and **REJ-001…009** — read the rejections before proposing |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md#the-critical-chain) | The build order |
-| [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) | How your PR is verified |
-| [`docs/design/`](docs/design/) | Per-layer implementation specs |
+The governing documents are listed under [Before you start](#before-you-start).
 
 ### ⚠️ Historical documents — plans, not current direction
 
@@ -62,9 +54,9 @@ Read these before writing code. Where anything else in the repo disagrees with t
 | Document | What it settles |
 |---|---|
 | [docs/INFLECTION_ARCHITECTURE.md](docs/INFLECTION_ARCHITECTURE.md) | Why the product moves from *ranking* to *allocating* |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Settled decisions (ADR-001…008) and **rejected** proposals (REJ-001…008) |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Settled decisions (ADR-001…009) and **rejected** proposals (REJ-001…009) |
 | [docs/ROADMAP.md](docs/ROADMAP.md#the-critical-chain) | The build order — Step 0 blocks everything |
-| [docs/TEST_STRATEGY.md](docs/TEST_STRATEGY.md) | The five test tiers your PR is reviewed against |
+| [docs/TEST_STRATEGY.md](docs/TEST_STRATEGY.md) | The six test tiers your PR is reviewed against (1, 2, 3, 3b, 4, 5) |
 
 Per-layer specs are in [docs/design/](docs/design/). The tracking epic is [#156](https://github.com/Celerio-sg/ATSassin/issues/156) — start there.
 
@@ -136,7 +128,9 @@ If an issue interests you but is unclear, **ask before coding**. A short questio
 
 ## Active parallel tracks
 
-These workstreams can be developed in parallel — they are not blocked by each other, although some depend on shared building blocks (e.g. PII scrubbing gates any shared data). See `docs/AUDIT_DESIGN_GAPS.md` §Parallel-track notes and `docs/CRITICAL_CHAIN_PLAN.md` for dependencies and sequencing.
+Dependencies are recorded on the issues themselves. **Filter by the `blocked` label** — it is now applied to every issue with an unmet dependency, so an unlabelled issue in Step 0 is genuinely startable today.
+
+(Do not consult `docs/AUDIT_DESIGN_GAPS.md` or `docs/CRITICAL_CHAIN_PLAN.md` for sequencing — both are in the historical table above and plan rejected work.)
 
 The four **milestones** are the unit to work against — they mirror the critical chain and each issue is assigned to one.
 
@@ -195,7 +189,6 @@ When you open an issue or PR, please pick the relevant `area:*` label so the rig
 - **Casual questions / ideas:** [GitHub Discussions](https://github.com/Celerio-sg/ATSassin/discussions)
 - **Real-time chat:** [Discord](https://discord.gg/PwwnemcAy) — casual chat, quick questions, and pairing
 - **Bug reports / feature requests:** [Open an issue](https://github.com/Celerio-sg/ATSassin/issues/new/choose)
-- **Real-time chat:** check the repository README or pinned issues for any Discord / community links
 - **Mentorship:** if you are a first-time contributor and get stuck, mention it in the issue or PR. Maintainers try to pair-program or leave detailed review guidance when bandwidth allows.
 
 ---

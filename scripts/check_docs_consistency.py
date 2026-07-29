@@ -7,8 +7,15 @@ thing, or to nothing.
 
 Every check here corresponds to a defect that actually shipped:
 
-  - a design doc claimed "#119 survives only as the prior table" while #119 was
-    entirely a salary dataset          -> CHECK: cited issues exist and are open
+  - #174/#175 cited #170 (a closed bounty PR) meaning #173
+                                       -> CHECK: issue bodies cite live issues
+  - the board review cited four closed issues as if actionable
+                                       -> CHECK: closed issues carry closure context
+
+  NOT caught here, and no script can: whether a cited issue is *about* what the
+  citing text claims. A doc said "#119 survives only as the prior table" while
+  #119 was entirely a salary dataset - both existed, both were open, the
+  reference was still wrong. That class needs a human or an LLM reviewer.
   - CONTRIBUTING routed contributors to a plan for rejected work
                                        -> CHECK: no active doc cites a rejected issue
   - the board review pointed at four closed issues as if actionable
@@ -172,7 +179,9 @@ def check_tracker(issues: dict[int, dict]) -> None:
                 continue
             for match in re.finditer(r"#(\d{1,4})\b", scrubbed):
                 n = int(match.group(1))
-                if n < 40:  # older numbers collide with section and finding numbering
+                # Low numbers collide with section/finding numbering, so only
+                # flag them when the line looks like a real tracker citation.
+                if n < 40 and not re.search(r"issue #|Issue #|#\d+\s*(tracks|covers)|\(#\d+\)", line):
                     continue
                 issue = issues.get(n)
                 if issue is None:
@@ -188,11 +197,39 @@ def check_tracker(issues: dict[int, dict]) -> None:
                     fail(f"{rel}:{num}: cites closed #{n} without closure context")
 
 
+def check_issue_cross_refs(issues: dict[int, dict]) -> None:
+    """Issue bodies must not cite closed/rejected issues as live work.
+
+    Two real defects motivated this: #174 and #175 both cited #170 - a closed,
+    unmerged bounty PR - where they meant #173, and GitHub rendered those as
+    live links to the wrong artifact. Docs were checked; issue bodies were not.
+    """
+    for num, issue in issues.items():
+        if issue.get("state") != "OPEN":
+            continue
+        body = issue.get("body") or ""
+        for line in body.splitlines():
+            scrubbed = re.sub(r"`[^`]*`", "", line)
+            for m in re.finditer(r"#(\d{2,4})", scrubbed):
+                n = int(m.group(1))
+                target = issues.get(n)
+                if target is None or n == num:
+                    continue
+                if any(w in line.lower() for w in CLOSURE_WORDS):
+                    continue
+                if n in REJECTED:
+                    fail(f"issue #{num}: cites rejected #{n} as live work")
+                elif target["state"] == "CLOSED":
+                    fail(f"issue #{num}: cites closed #{n} "
+                         f"(\"{target['title'][:50]}\") without closure context")
+
+
 def load_issues() -> dict[int, dict]:
     out = subprocess.run(
         ["gh", "issue", "list", "--state", "all", "--limit", "500",
-         "--json", "number,state,title"],
+         "--json", "number,state,title,body"],
         capture_output=True, text=True, cwd=ROOT, check=True,
+        encoding="utf-8", errors="replace",   # issue bodies contain non-cp1252 chars
     )
     return {i["number"]: i for i in json.loads(out.stdout)}
 
@@ -209,7 +246,9 @@ def main() -> int:
 
     if args.with_tracker:
         try:
-            check_tracker(load_issues())
+            _issues = load_issues()
+            check_tracker(_issues)
+            check_issue_cross_refs(_issues)
         except Exception as exc:  # noqa: BLE001 - network/auth failures are not doc bugs
             warn(f"tracker check skipped: {exc}")
 

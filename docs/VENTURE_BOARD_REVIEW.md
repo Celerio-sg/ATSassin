@@ -474,7 +474,7 @@ Extract visa, language, and experience-level constraints from job text using reg
 
 **The gap:** Salary inference today is pure LLM estimation with a hardcoded sanity ceiling. There is no real market dataset, no cross-source corroboration, and no methodology for inferring unstated ranges.
 
-> **Superseded 2026-07-29.** The maintained dataset below is no longer the primary plan. Layer 1's extraction ladder supplies compensation **directly from the employer, per posting, with perfect provenance and zero curation** — strictly better than a baseline file that needs perpetual updating and is stale the day it ships. Issue #119 survives only as the **prior table** for the Layer 2 conversion model, never as a user-facing per-job figure. See [design/EVIDENCE_LAYER.md](design/EVIDENCE_LAYER.md) and [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md).
+> **Superseded 2026-07-29.** The maintained dataset below is no longer the primary plan. Layer 1's extraction ladder supplies compensation **directly from the employer, per posting, with perfect provenance and zero curation** — strictly better than a baseline file that needs perpetual updating and is stale the day it ships. Issue #119 is **closed out of Layer 2 entirely** — it is a salary dataset. The Layer 2 conversion **prior table is #176**, a separate artifact that does not exist yet. Earlier text here claimed #119 "survives as the prior table"; that was wrong and sent readers to the wrong issue. See [design/EVIDENCE_LAYER.md](design/EVIDENCE_LAYER.md) and [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md).
 >
 > Related live finding: the compensation *floor* had the same class of problem from the opposite direction — it was sourced from a help-text placeholder, with no extraction and no onboarding prompt (#155).
 
@@ -760,7 +760,7 @@ Each phase is independently shippable. Phases 0-2 need no daemon, no new hard de
 - Quota as observed cache (provider self-reports via headers) ✅
 - `atsassin compute status` CLI command ✅
 - Explicit `allow_paid` semantics (defaults false) ✅
-- Closes issue #3 (`--preset` having no effect on hosted providers) as side effect ✅
+- ❌ **This claim was false.** Issue #3 was closed, but `--preset` still has no effect on model choice for hosted providers — `config.rs:422` collapses all three tiers to `default_model` on every load. Confirmed live 2026-07-29 and re-filed as **#171**.
 
 #### Phase 2 — Local Compression
 - zstd-compress telemetry/archive rows older than 30 days ✅

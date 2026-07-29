@@ -51,7 +51,7 @@ Closes #116, #58, #117, and **replaces** the maintained salary dataset in #119 �
 
 Per-user Bayesian (Beta-Binomial) conversion model fitted from data already captured (`edit_distance`, submission latency, pipeline/IMAP outcomes). Mandatory shrinkage toward published priors, interval reporting, and controllable-vs-structural factor decomposition.
 
-Reframes #115, #48, #132; #119 survives only as the prior table.
+Reframes #115, #48, #132. The conversion prior table is **#176** — earlier text claimed "#119 survives only as the prior table", which was wrong: #119 is a salary dataset. #119 is superseded by Layer 1 and closed out of Layer 2 entirely.
 
 #### Step 3 — Allocation layer → [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md)
 

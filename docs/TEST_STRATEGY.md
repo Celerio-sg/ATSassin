@@ -75,7 +75,7 @@ A tool claiming to serve everyone cannot be validated on one person. The 2026-07
 
 | Axis | Shapes that must be covered | What it stresses |
 |---|---|---|
-| **Career stage** | early-career (one demonstrated skill), mid, senior generalist | Diversification cap must derive to ~1 for early-career without being told |
+| **Career stage** | early-career (one demonstrated skill), mid, senior generalist | Diversification cap must **loosen toward the budget** for early-career and specialists (concentrate), and tighten only where adjacency is genuinely broad. A cap of 1 forces maximum spread — the opposite of what these shapes need |
 | **Adjacency structure** | generalist (high), licensed specialist (near-zero) | A specialist must not be pushed toward adjacent families |
 | **Urgency regime** | selective (one considered move), throughput (income needed soon) | Both regimes must produce sensible slates; neither is moralised about |
 | **Market** | US/W-EU, plus at least two of India, Japan, Brazil, Indonesia, Nigeria | Tier-2 ATS coverage collapses outside the West; tier 4 must carry it |

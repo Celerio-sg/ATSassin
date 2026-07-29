@@ -88,7 +88,7 @@ cp .env.example .env
 | `atsassin roles infer` | Dynamically infer suitable role archetypes from the profile |
 | `atsassin roles list` | List previously-inferred roles from the database (no fresh LLM call) |
 | `atsassin roles research --role <title>` | Synthesize market insights for a target role from scraped data |
-| `atsassin scan --role <query>` | Scan job boards for matching roles. Default boards: `linkedin`, `seek` (or `seek:sg`/`seek:nz`/`seek:hk` per issue #13), `companies` (a curated Greenhouse directory that includes APAC entries per issue #14), `social`. Also available via `--boards`: `indeed`, `glassdoor` (best-effort, usually blocked) and `greenhouse:<slug>` / `lever:<slug>` / `ashby:<slug>` for a single ATS-hosted company |
+| `atsassin scan --role <query>` | Scan job boards for matching roles. Default boards: `linkedin`, `seek` (or `seek:sg`/`seek:nz`/`seek:hk` per closed issue #13), `companies` (a curated Greenhouse directory that includes APAC entries per closed issue #14), `social`. Also available via `--boards`: `indeed`, `glassdoor` (best-effort, usually blocked) and `greenhouse:<slug>` / `lever:<slug>` / `ashby:<slug>` for a single ATS-hosted company |
 | `atsassin scan --role <query> --prefs-only` | Same as `scan`, but only show/save jobs matching your saved preferences |
 | `atsassin scan --role <query> --location <loc>` | Pin the location so LinkedIn's guest API doesn't silently default to US |
 | `atsassin preferences show` / `set` | View or set comp floor, employment type, and work-mode preferences used to filter scans and the TUI job table |
@@ -96,18 +96,18 @@ cp .env.example .env
 | `atsassin tailor --job-id <id>` / `--file <jd.txt>` | Generate tailored resume + cover letter (and persist them with the job's record) |
 | `atsassin pipeline list` | Track applications in SQLite |
 | `atsassin pipeline add --job-id <id> --status <status>` | Add a job to the pipeline |
-| `atsassin pipeline update --job-id <id> --status <status> [--notes] [--contact] [--follow-up YYYY-MM-DD]` | Update tracking fields for a pipeline entry (issue #10: terminal-status transitions feed the feedback/calibration table) |
+| `atsassin pipeline update --job-id <id> --status <status> [--notes] [--contact] [--follow-up YYYY-MM-DD]` | Update tracking fields for a pipeline entry (closed issue #10: terminal-status transitions feed the feedback/calibration table) |
 | `atsassin pipeline show --job-id <id>` | Show a job's description, status, and the resume/cover letter that was submitted |
 | `atsassin pipeline export --output file.csv` | Export the pipeline to CSV |
 | `atsassin recommend --limit <n>` | Rank every pooled job by composite "likely to land quickly" score (from relevance + prefs + recency + LLM eval + contract signal) |
 | `atsassin distill --output <dir>` | Export training pairs for self-fine-tuning |
 | `atsassin feedback record / stats / recent / should-escalate` | Self-optimization telemetry (acceptance rate, edit distance, escalation heuristic) |
-| `atsassin market stats` | Illustrative APAC tech hiring estimates (see issue #4 - not yet a sourced/verified dataset) |
+| `atsassin market stats` | Illustrative APAC tech hiring estimates (see closed issue #4 - not yet a sourced/verified dataset) |
 | `atsassin market rates --role <title>` | Illustrative compensation benchmarks (same caveat) |
 | `atsassin tui` | Terminal dashboard - infer roles, scan, evaluate, and tailor without leaving it (`e`/`t`/`s`/`r`, `p` to toggle preference filter, `x` to sort by local relevance) |
 | `atsassin playbook` | Print the bundled APAC-focused playbook |
 | `atsassin apply --job-id <id> [--output <dir>]` | Write a bookmarklet + JS snippet that fills known application-form fields from a job's saved resume/cover letter. Never clicks submit — you always review and send the application yourself |
-| `atsassin companies discover --name <name> --domain <domain>` / `list` | Detect which ATS (Greenhouse/Lever/Ashby/Workday) a company's public careers page uses, and persist it so future `scan --boards companies` sweeps include it (issue #1) |
+| `atsassin companies discover --name <name> --domain <domain>` / `list` | Detect which ATS (Greenhouse/Lever/Ashby/Workday) a company's public careers page uses, and persist it so future `scan --boards companies` sweeps include it (closed issue #1) |
 | `atsassin outcomes connect --server <host> --username <user> --password <pw>` | Store IMAP credentials in the OS keychain. **Opt-in only** — nothing reads your mailbox unless you run this and `outcomes sync` yourself |
 | `atsassin outcomes sync --server <host> --username <user> [--password <pw>]` | Read ATS outcome emails (rejection/interview/offer) via IMAP and update matching pipeline entries. Off by default; requires `outcomes connect` first |
 | `atsassin compute status` | Show the Compute Broker's provider registry and cached self-reported quota. Recommends free/configured providers but never switches providers automatically |
@@ -126,7 +126,7 @@ Salary ranges, demand percentages, and other market figures surfaced by `atsassi
 | `balanced` | `qwen3.5:9b` | 8192 | yes | 8 GB |
 | `full` | `qwen3.5:9b:q6` | 32768 | no | 16 GB |
 
-## `--preset` and cloud providers (issue #3, surfaced as a callout)
+## `--preset` and cloud providers (closed issue #3, surfaced as a callout)
 
 When using a hosted cloud provider (`LLM_PROVIDER=groq`, `kimi`, `lightning`, `glm`, `openai`, `anthropic`, `openrouter`), the `--preset` flag does **not** change which model is queried. The model name is fixed in your `.env` (e.g. `GROQ_MODEL=llama-3.3-70b-versatile`). `--preset` only changes:
 
@@ -136,22 +136,22 @@ When using a hosted cloud provider (`LLM_PROVIDER=groq`, `kimi`, `lightning`, `g
 
 If you want `--preset balanced` to mean "smaller / cheaper model on Groq" rather than "more timeouts", that's a future enhancement - cloud providers currently have a single configured model rather than a tier mapping.
 
-## Multi-region job boards (issues #13 and #14)
+## Multi-region job boards (closed issues #13 and #14)
 
 `atsassin scan` defaults to the Australian Seek and a US-centric `companies` directory. To route to a different region:
 
-- `--boards seek:sg` (Singapore Seek), `:nz` (NZ), `:hk` (HK) — routes Seek through the right chalice-search `siteKey` (issue #13). The same chalice-search endpoint serves every Seek market; before this fix the adapter hardcoded the Australian siteKey so SG/HK/NZ candidates got 0 jobs.
-- `--boards companies` — the curated Greenhouse directory, which now includes APAC entries (issue #14) so SG/HK/JP/AU/IN candidates no longer get a zero-board result.
+- `--boards seek:sg` (Singapore Seek), `:nz` (NZ), `:hk` (HK) — routes Seek through the right chalice-search `siteKey` (closed issue #13). The same chalice-search endpoint serves every Seek market; before this fix the adapter hardcoded the Australian siteKey so SG/HK/NZ candidates got 0 jobs.
+- `--boards companies` — the curated Greenhouse directory, which now includes APAC entries (closed issue #14) so SG/HK/JP/AU/IN candidates no longer get a zero-board result.
 
-## Work-mode matching (issue #12, surfaced for SG/JP/APAC candidates)
+## Work-mode matching (closed issue #12, surfaced for SG/JP/APAC candidates)
 
 `preferences set --work-mode remote` accepts APAC-friendly phrasing — not just the English literal "remote". The matcher also recognises: telecommuting, telework, work from anywhere, WFA, home-based, smart working, plus the Japanese (リモート / 在宅 / ハイブリッド) and Chinese (在家办公) equivalents. `HybridOrRemote` further accepts "Hybrid (Singapore)", "flex work", and similar.
 
-## Board-health canary (issue #8)
+## Board-health canary (closed issue #8)
 
 A scheduled GitHub Action (`/.github/workflows/board_health.yml`) sweeps every supported board daily and opens a tracking issue if any board mysteriously returns 0 jobs. Useful for catching JSON-shape drift before a real user hits it on a Thursday morning scan.
 
-## CLI-documentation coverage (issue #9)
+## CLI-documentation coverage (closed issue #9)
 
 `scripts/check_cli_docs.sh` asserts every `Commands::` variant in `src/cli.rs` is mentioned in this README. CI gates on it. Cheap to maintain.
 

@@ -40,7 +40,7 @@ observed:   k successes out of n trials, locally
 posterior:  θ_{t,b} | data ~ Beta(α_{t,b} + k,  β_{t,b} + n − k)
 ```
 
-Priors come from published funnel research, encoded as a static table (#176). **This is the only legitimate use of the published benchmarks** — they are prior parameters, never figures shown to the user as guidance.
+Priors come from published funnel research, encoded as a static table. **That table does not exist yet and is specified by #176** — it is *not* issue #119, which is a salary dataset and unrelated. Earlier drafts of this doc pointed at #119; that pointer was wrong. **This is the only legitimate use of the published benchmarks** — they are prior parameters, never figures shown to the user as guidance.
 
 Prior strength is `α + β`, in units of effective prior observations. Set `α = p̄(α+β)` and `β = (1 − p̄)(α+β)` where `p̄` is the published rate for that bucket, so the prior mean is exactly `p̄`.
 
@@ -71,18 +71,19 @@ Equal-tailed rather than highest-density: for small `k` the posterior is strongl
 
 The model reports that interval, and the CLI/TUI must render it — never a bare point estimate.
 
-### Optional: partial pooling (this is what "hierarchical" would mean)
-
-Buckets are related — deep/light/generic tailoring are points on one axis. A genuinely hierarchical model puts a hyperprior over the bucket-level `θ` so a sparse bucket borrows strength from its neighbours, which materially helps early in a search when every bucket is thin.
-
-Worth doing, but it is **not** the base model and must not be described as though it is. Defer until the base model has real data; revisit under #150.
-
 ```
 Callback rate (deeply tailored, <7d):  4% – 19%   (n=12, prior-dominated)
 Callback rate (deeply tailored, <7d):  9% – 13%   (n=140, personal)
 ```
 
 This is the project's honest-failure value expressed statistically. It is also what makes the number trustworthy enough for Layer 3 to optimise against.
+
+
+### Optional: partial pooling (this is what "hierarchical" would mean)
+
+Buckets are related — deep/light/generic tailoring are points on one axis. A genuinely hierarchical model puts a hyperprior over the bucket-level `θ` so a sparse bucket borrows strength from its neighbours, which materially helps early in a search when every bucket is thin.
+
+Worth doing, but it is **not** the base model and must not be described as though it is. Defer until the base model has real data; revisit under #150.
 
 ### Controllable / structural decomposition
 

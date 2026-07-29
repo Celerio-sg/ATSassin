@@ -74,7 +74,7 @@ See [design/EVIDENCE_LAYER.md](design/EVIDENCE_LAYER.md).
 
 **Date:** 2026-07-29 · **Status:** Accepted
 
-Published funnel statistics enter the system as **prior distributions**, never as figures shown to the user as guidance. Personal rates are shrunk toward the prior in proportion to observation count, and reported as intervals.
+Published funnel statistics enter the system as **prior distributions**, never as figures shown to the user as guidance. Personal rates are shrunk toward the prior, and reported as intervals. **The shrinkage is *inversely* proportional to observation count** — the prior's share is `w = (α+β)/(α+β+n)`, which *decreases* as `n` grows, so more data means *less* pull toward the literature. An earlier draft of this ADR stated that relationship backwards.
 
 The model is a **conjugate Beta-Binomial with an informative prior**. It is *not* empirical Bayes — that would estimate the hyperparameters from the data rather than take them from published research — and it is not hierarchical unless partial pooling across buckets is added later. Earlier drafts used both terms incorrectly; see [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md).
 
@@ -138,7 +138,7 @@ None was written in bad faith; each felt like precision at the time, because it 
 **The rules that follow:**
 
 1. **No constant that varies by circumstance.** Effort budgets, diversification caps, seniority bands, tailoring thresholds: derived from the user's own data, or asked. A number fitted to one profile and hardcoded is a defect, not a default.
-2. **A valid parameter range includes its degenerate case.** Diversification of 1 (none) must be reachable. So must a slate of 1, and a fit floor of 0.
+2. **A valid parameter range includes its degenerate case.** *No* diversification must be reachable — which in this construction is a per-family cap **equal to the budget**, not a cap of 1. (A cap of 1 is *maximum* diversification; an earlier draft of this rule had it backwards.) A slate of 1, and a slate of 0, must also be reachable.
 3. **Enumerated lists of human circumstance are assumed incomplete.** Structural factors, employment types, work arrangements, document formats. Default to adding, and never let the testing profile define the list's boundaries.
 4. **A single-profile result is an illustration, never a validation.** Label it as such in the text. Claims about how often a mechanism pays off require the multi-shape trial matrix in [TEST_STRATEGY.md](TEST_STRATEGY.md).
 5. **Geographic and linguistic coverage is stated, not implied.** Where a mechanism serves one region well, say which regions it does not serve, and treat that as a tracked gap.
@@ -299,7 +299,7 @@ Every substantive concept below, and where it landed.
 | FastText / ONNX classification | #163 (embedding choice), #133 (segments) |
 | **zstd dictionary compression** | **#169** |
 | Local per-host rate limiting | #130 — enforced locally, never delegated |
-| **ATS JSON endpoints (`content=true`, `mode=json`, `includeCompensation=true`, Workday)** | **#173** — Tier 2, previously unfiled |
+| **ATS JSON endpoints (`content=true`, `mode=json`, `includeCompensation=true`, Workday)** | **#173** — Tier 2. Note #149 is Tier **4** (JSON-LD), not Tier 2 |
 | **Local per-host rate limiting (GCRA, local only)** | **#174** — the rejected distributed version had no successor |
 | **GDPR local case, retention, erasure, scraping legal test, anti-bot position** | **#175** |
 | Ryanair v. PR Aviation; EU Database Directive; UK CMA 1990 s3A | **#175** — reasoning restored, not just the operational rule |

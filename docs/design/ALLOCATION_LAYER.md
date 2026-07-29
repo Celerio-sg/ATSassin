@@ -9,21 +9,27 @@ Turn the opportunity set into a **decision**: which applications to make this we
 
 This is the inflection. Everything below it is infrastructure for this output.
 
-## Why ranking is the wrong primitive
+## Why a solver at all — and an honest bound on the claim
 
-Every competitor, and ATSassin today, sorts by score and shows the top N. That is a commodity: LinkedIn has one, every tool in the benchmark has one, and a better sort is a better commodity.
+The user can only make a finite number of genuinely-tailored applications per period. The question is which subset.
 
-The user's actual constraint is not "which is best" but **"which subset, given a finite budget of genuinely-tailored applications per period"**. Deep tailoring is what produces the higher callback rate; undifferentiated volume does not, which is why mass-apply tools fail. Under that constraint, greedy ranking is provably suboptimal for three independent reasons:
+**Be precise about what this buys, because an earlier draft of this section overclaimed.** Under the constraint set as specified — a budget `B`, a per-family cap, and one application per posting — the feasible sets form a *truncated partition matroid* and the objective is *modular* (a sum of independent per-posting terms). Max-weight independent set in a matroid is solved **exactly by greedy**: sort by weight, take if feasible. So for the constraints listed here, **sorting by `P·decay` and taking greedily subject to the family caps is optimal**, and a flow solver is machinery for a problem a sort already solves.
 
-1. **Postings expire at different rates.** A 6-day-old posting must be acted on now; a 1-day-old one can wait a cycle at no cost. Sorting by score cannot express a deadline.
-2. **Effort is a shared, renewable-per-period resource.** Spending it on the #1 and #2 roles may be worse than #1 and #7 if #1 and #2 are near-identical.
-3. **Marginal value is non-linear across role families.** With four VP Sales applications in flight, a fifth adds less expected value than a first Program Manager application. Ranking has no notion of what is already in the pipeline.
+Three claims an earlier draft made for the solver, and what is actually true:
 
-Point 3 is where greedy fails hardest, and it is **exactly this project's founding insight**. The trial that reframed "VP Sales" to "Program Manager" found stronger matches immediately. The board review files this under *unawareness* and treats it as a discovery problem. It is a **portfolio allocation problem**, and modelling it as one is the novel move.
+| Claim | Reality |
+|---|---|
+| "Sorting cannot express a deadline" | The model is **single-period**. Decay enters as a re-weighting of the score, so sorting by `P·decay` expresses exactly as much deadline as the flow does. A genuine "this can wait a cycle" argument needs a multi-period formulation that does not exist here |
+| "Near-identical postings are redundant" | Redundancy is a **submodular** effect. This objective is modular; nothing penalises redundancy except the family cap, which is coarse |
+| "Marginal value diminishes across families" | A capacity constraint is a **box constraint, not a concave utility**. The fifth application in a family has undiminished marginal value right up until the cap truncates it to zero |
 
-A live scan on 2026-07-29 illustrated this: against the same 44-company sweep, `"Sales Director"`, `"Country Manager"` and `"Fractional Chief Revenue Officer"` each returned **0** jobs, while `"Program Manager"` returned **46** and `"Business Development"` returned **43**. The obvious titles were empty; the adjacent framing was where the roles were.
+**So why keep the flow formulation?** Because the constraint set is not going to stay a matroid:
 
-**Read that as an illustration, not as validation.** It is n=1, and that one profile — a 25-year generalist with transferable function across several industries — is close to the best possible case for adjacency. It demonstrates that the mechanism *can* pay off; it does not establish how often, for whom, or by how much. A licensed specialist run through the same test would likely show the opposite, and that is the expected and correct result rather than a failure. Establishing the real distribution requires the multi-shape trial matrix in [TEST_STRATEGY.md](../TEST_STRATEGY.md).
+- **#167's effort weighting** makes budget consumption heterogeneous, which breaks the matroid immediately.
+- **Posting liveness** (#177) and multi-period scheduling both add structure greedy cannot express.
+- The flow model is the natural home for those, and swapping it in later means rewriting the layer.
+
+That is a defensible reason to build it. *"Greedy is provably suboptimal"* was not, and should not be repeated. **If effort weighting is descoped, greedy is the correct implementation and this layer should be simplified accordingly.**
 
 ## Every parameter is derived or user-set. None is a constant.
 
@@ -54,9 +60,20 @@ The cap must be **derived from the profile's actual adjacency structure**, not a
 - **Low adjacency**: licensed or credentialed specialists — clinicians, tax attorneys, airline pilots, actuaries — where "adjacent" roles are often a *downgrade* or legally unavailable.
 - **Narrow-by-stage**: early-career candidates with one demonstrated skill, where breadth reads as unfocused rather than versatile.
 
-**A cap of 1 (no diversification) is a valid solution and must be reachable.** Pushing a specialist toward adjacent families would be actively harmful, and pushing an early-career candidate to spread thin works against them.
+> ### ⚠️ Read the direction carefully — this was documented backwards
+>
+> The cap is a **per-family maximum** on `user → archetype`. So:
+>
+> | Cap value | Effect |
+> |---|---|
+> | `cap = 1` | At most **one** application per family → a budget of 7 is forced across **7 distinct families** → **maximum diversification** |
+> | `cap ≥ B` | Unbinding → all `B` applications may sit in **one** family → **no diversification** |
+>
+> Earlier drafts said *"a cap of 1 (no diversification)"*, which is exactly inverted, and prescribed *"if archetypes cluster tightly, the cap tightens"* — also inverted. A specialist with one viable family and `cap = 1` gets a **slate of 1** and the rest of the budget dumped into slack, which is precisely the harm the paragraph was trying to prevent.
 
-Derive adjacency from the role-archetype inference already in the pipeline: if inferred archetypes cluster tightly, adjacency is low and the cap tightens automatically. Do not hardcode a spread.
+**"No diversification" is `cap = B`, not `cap = 1`.** That value must be reachable, because pushing a specialist toward adjacent families is actively harmful and pushing an early-career candidate to spread thin works against them.
+
+Derive the cap from the role-archetype inference already in the pipeline, in the correct direction: **tightly clustered archetypes mean low adjacency, so the cap should loosen toward `B`** (concentrate). Widely spread archetypes mean high adjacency, so the cap can tighten (explore). Do not hardcode either end.
 
 ## Formulation
 
@@ -143,7 +160,13 @@ Everything a contributor needs, so the data structure and the details are not ch
 | `archetype → posting` | cap 1; cost = `−log( P(callback) · decay(age) )` |
 | `posting → sink` | cap 1; cost 0 |
 
-**Degenerate inputs.** `P = 0` or `decay = 0` gives infinite cost. Clamp both to a small floor (suggest `P_floor = 1e-6`) before taking the log, or exclude the posting from the graph entirely — do not let an infinity or a `NaN` reach the solver. Postings past `validThrough` are excluded rather than decayed to zero, so in practice the decay floor should rarely bind.
+**Degenerate inputs — clamp from BOTH sides.**
+
+- **Lower:** `P = 0` or `decay = 0` gives infinite cost. Floor both before the log, or exclude the posting.
+- **Upper: `decay` must be clamped to ≤ 1.** A future-dated `datePosted` (scheduled publication, timezone skew, bad ATS data — all routine) gives `age < 0`, so `decay = 0.5^(age/h) > 1`. If `P · decay > 1` the cost goes **negative**, and Dijkstra with zero-initialised potentials returns a wrong shortest path **silently** — no panic, no assertion, just a wrong slate. Worked case: `h = 7`, `age = −30`, `P = 0.10` → `decay = 19.5`, `P·decay = 1.95`, `cost = −0.668`.
+- Treat `age < 0` as `age = 0` (`decay = 1`), which is the honest reading: a posting cannot be fresher than new.
+
+Postings past `validThrough` are excluded rather than decayed, so the lower floor should rarely bind.
 
 **Posting-to-archetype multiplicity.** A posting may plausibly belong to several role families. Assign each posting to **exactly one** archetype — its highest-scoring — otherwise the diversification cap is unenforceable, since flow could reach one posting through several archetype edges and evade the cap. Record the alternates for display; do not add parallel edges.
 
