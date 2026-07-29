@@ -32,6 +32,27 @@ session-ses_*.md
 # other projects' full source trees, not part of ATSassin itself
 /benchmarks/
 
+# Generated application kits (contain PII - tailored resumes, cover letters)
+/apply_kit_*/
+/tailored_*
+
+# LLM telemetry logs (contain full prompt/response traces)
+*.llm_telemetry.jsonl
+
+# Demo scratch files (raw tapes, intermediate captures, local scaffolds)
+/demo.tape
+/demo_vhs.tape
+/demo_jd.txt
+/scripts/Dockerfile.vhs
+/scripts/capture_demo.ps1
+/scripts/demo.ps1
+/scripts/demo_vhs.tape
+/scripts/make_demo_gif.py
+/scripts/make_opengraph.py
+
+# Batch-issue-creation helpers (one-shot utility, not part of the project)
+/scripts/create_comprehensive_issues.sh
+
 # Real personal LinkedIn export used as a local test fixture - contains real
 # names/emails/phone numbers (the account owner's and their connections').
 # Never commit this. If an example LinkedIn-export fixture is needed for

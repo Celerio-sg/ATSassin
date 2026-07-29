@@ -276,29 +276,83 @@ These are not blockers but represent high-value extensions:
 
 ## Combined Summary Table
 
-| ID  | Priority | Title | Related Issue |
-| --- | -------- | ----- | ------------- |
-| CR-1 | CRITICAL | Distillation conversion scripts are stubs | #63 (fixed) |
-| CR-2 | CRITICAL | Lightning AI integration is stubbed | #64 (fixed) |
-| HI-1 | HIGH | Daemon is scan-only | #65 (fixed) |
-| HI-2 | HIGH | PII scrubbing missing from LoRA sharing | #66 (fixed) |
-| HI-3 | HIGH | OpenSSL via `imap` crate | #67 |
-| HI-4 | HIGH | Board-health canary not automated | #68 |
-| ME-1 | MEDIUM | Startup secret validation | #69 |
-| ME-2 | MEDIUM | Health check command | #70 |
-| ME-3 | MEDIUM | Prompt input sanitization | #71 |
-| ME-4 | MEDIUM | README sync check in CI | #72 |
-| ME-5 | MEDIUM | Validate low-spec hardware claim | #73 |
-| LO-1 | LOW | Configurable circuit breaker | #74 |
-| LO-2 | LOW | Circuit breaker telemetry | #75 |
-| LO-3 | LOW | SQLite encryption-at-rest | #76 |
-| LO-4 | LOW | DB connection pool contention | #77 |
-| LO-5 | LOW | Disk space monitoring | #78 |
-| LO-6 | LOW | Remove `.expect()` in HTTP clients | #79 |
-| LO-7 | LOW | Structured error codes | #80 |
-| LO-8 | LOW | PII scrubber edge cases | #81 |
-| LO-9 | LOW | Document env vars | #82 |
-| LO-10 | LOW | Config backup/rollback | #83 |
-| ST-1 | HIGH | Crowd-source role/salary/board knowledge | #105 |
-| ST-2 | HIGH | Continual landscape polling / career coach | #106 |
-| ST-3 | HIGH | Comprehensive design completeness audit | #107 |
+**Cleanup note (2026-07-29):** Duplicate issues from parallel audit passes have been consolidated. Issues #84-#104 are closed as duplicates of #63-#83. Issues #63-#66, #108 are closed as fixed (code applied in commit 071071f). The canonical open items are listed below — see the GitHub tracker for latest status.
+
+| ID  | Priority | Title | Related Issue | Status |
+| --- | -------- | ----- | ------------- | ------ |
+| CR-1 | CRITICAL | Distillation conversion scripts are stubs | #63 | ✅ Fixed (commit 071071f) |
+| CR-2 | CRITICAL | Lightning AI integration is stubbed | #64 | ✅ Fixed (commit 071071f) |
+| HI-1 | HIGH | Daemon is scan-only | #65 | ✅ Fixed (commit 071071f) |
+| HI-2 | HIGH | PII scrubbing missing from LoRA sharing | #66 | ✅ Fixed (commit 071071f) |
+| HI-3 | HIGH | OpenSSL via `imap` crate | #67 | Open |
+| HI-4 | HIGH | Board-health canary not automated | #68 | Open |
+| ME-1 | MEDIUM | Startup secret validation | #69 | Open |
+| ME-2 | MEDIUM | Health check command | #70 | Open |
+| ME-3 | MEDIUM | Prompt input sanitization | #71 | Open |
+| ME-4 | MEDIUM | README sync check in CI | #72 | Open |
+| ME-5 | MEDIUM | Validate low-spec hardware claim | #73 | Open |
+| LO-1 | LOW | Configurable circuit breaker | #74 | Open |
+| LO-2 | LOW | Circuit breaker telemetry | #75 | Open |
+| LO-3 | LOW | SQLite encryption-at-rest | #76 | Open |
+| LO-4 | LOW | DB connection pool contention | #77 | Open |
+| LO-5 | LOW | Disk space monitoring | #78 | Open |
+| LO-6 | LOW | Remove `.expect()` in HTTP clients | #79 | Open |
+| LO-7 | LOW | Structured error codes | #80 | Open |
+| LO-8 | LOW | PII scrubber edge cases | #81 | Open |
+| LO-9 | LOW | Document env vars | #82 | Open |
+| LO-10 | LOW | Config backup/rollback | #83 | Open |
+| ST-1 | HIGH | Crowd-source role/salary/board knowledge | #105 | Open |
+| ST-2 | HIGH | Continual landscape polling / career coach | #106 | Open |
+| ST-3 | HIGH | Comprehensive design completeness audit | #107 | Open |
+
+---
+
+## Deep Design Issues (raised during precision-engineering design pass)
+
+### Design Group A: Distillation Pipeline (depth expansion)
+
+| ID | Priority | Title | Issue |
+| -- | -------- | ----- | ----- |
+| DP-1 | HIGH | Training dataset curation pipeline (dedup, thresholds, balancing) | #109 |
+| DP-2 | HIGH | Automated student model training workflow (end-to-end local FT) | #110 |
+| DP-3 | HIGH | Distillation evaluation harness & benchmark (automated quality gate) | #111 |
+| DP-4 | MEDIUM | Continuous model improvement loop (auto-retrain on feedback) | #112 |
+| DP-5 | MEDIUM | Cross-architecture deployment targets (CoreML, DirectML, WebGPU) | #113 |
+| DP-6 | MEDIUM | Model registry & versioning for distilled artifacts | #114 |
+| DP-7 | MEDIUM | Calibrate distillation against real pipeline outcomes | #115 |
+
+### Design Group B: Sourcing Architecture
+
+| ID | Priority | Title | Issue |
+| -- | -------- | ----- | ----- |
+| SA-1 | HIGH | Modular source architecture (trait-based pluggable sources) | #130 |
+| SA-2 | HIGH | Autonomous company ATS detector (replace static board list) | #116 |
+
+### Design Group C: Pragmatic Matching
+
+| ID | Priority | Title | Issue |
+| -- | -------- | ----- | ----- |
+| PM-1 | HIGH | Pragmatic requirement scoring (adjacent/transferable/weighted) | #132 |
+| PM-2 | MEDIUM | Job segment classifier (tag roles by industry at scrape time) | #133 |
+| PM-3 | MEDIUM | Visa/language/experience restriction parser | #117 |
+| PM-4 | MEDIUM | Embedding-based proximity matching (cosine similarity) | #118 |
+
+### Design Group D: Salary Inference
+
+| ID | Priority | Title | Issue |
+| -- | -------- | ----- | ----- |
+| SI-1 | HIGH | Market baseline salary dataset (lightweight JSON) | #119 |
+| SI-2 | MEDIUM | Cross-corpus salary corroboration (average across sources) | #120 |
+
+### Design Group E: Career Coach
+
+| ID | Priority | Title | Issue |
+| -- | -------- | ----- | ----- |
+| CC-1 | MEDIUM | Continuous market-watch daemon (one-shot scheduled) | #121 |
+| CC-2 | MEDIUM | Preference-challenge insights engine | #122 |
+
+### Design Group F: Housekeeping
+
+| ID | Priority | Title | Issue |
+| -- | -------- | ----- | ----- |
+| HK-1 | LOW | Consolidate duplicate issues and close orphaned ones | #140 |
