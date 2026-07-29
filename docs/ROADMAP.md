@@ -55,7 +55,7 @@ Reframes #115, #48, #132; #119 survives only as the prior table.
 
 #### Step 3 — Allocation layer → [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md)
 
-Min-cost max-flow slate generation: weekly effort budget, role-archetype diversification caps, `−log P(callback)` costs with age decay. Counterfactual re-solve replaces the heuristic preference-challenge engine.
+Min-cost max-flow slate generation: weekly effort budget, role-archetype diversification caps, `−log( P(callback) · decay(age) )` costs — the multiplication is *inside* the log; the outside form inverts the model and makes the solver prefer stale postings. Counterfactual re-solve replaces the heuristic preference-challenge engine.
 
 Reframes #122, #133, #121, #106.
 

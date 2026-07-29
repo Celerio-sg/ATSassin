@@ -224,7 +224,7 @@ The real problem underneath is not maximum matching. It is **min-cost flow under
 ```
 source ──[capacity = weekly effort budget]──▶ user
 user ──[capacity = diversification cap]──▶ role archetype
-role archetype ──[cost = −log P(callback), decayed by posting age]──▶ posting
+role archetype ──[cost = −log( P(callback) · decay(age) )]──▶ posting
 posting ──[capacity = 1]──▶ sink
 ```
 

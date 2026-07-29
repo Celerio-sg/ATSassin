@@ -245,7 +245,25 @@ Callback-penalty data for minority names, employment gaps, and prior self-employ
 
 # Concept traceability
 
-Every substantive concept from the three source research documents, and where it landed. Anything not here was not considered — if you spot a gap, that is a bug in this table.
+**This table is a navigation aid, not a completeness proof.** An independent three-agent audit on 2026-07-29 tested it against the source documents and found it claimed more than it delivered: roughly 30 rows against ~120 discrete concepts across the three papers, **four factually wrong rows**, and several dispositions that pointed at issues whose content did not match the claim.
+
+The wrong rows are corrected below and the gaps they hid are now filed (#173–#179). The lesson is recorded rather than quietly fixed, because the failure mode generalises: **a traceability table is written by the same person who did the analysis, so it inherits their blind spots and then lends them false authority.** If you are checking whether something was considered, read the issue, not this row.
+
+Corrections applied 2026-07-29:
+
+| Row that was wrong | What was actually true |
+|---|---|
+| "ATS JSON API endpoints → #130, #149 (tier 2)" | #149 is **Tier 4**; #130 predates the ladder and names no endpoint. **Tier 2 had no issue at all** — the primary extraction path, and the mechanism used to justify superseding #119/#58. Now **#173** |
+| "Legal / GDPR / ToS boundary → EVIDENCE_LAYER compliance section" | That section is three operational bullets and contains **no mention of GDPR, personal data, or takedown**. The local-controller case was never resolved. Now **#175** |
+| "Local per-host rate limiting → #130, enforced locally" | #130 specifies per-host **concurrency**, a different axis. The rejected distributed GCRA has **no specified local successor**. Now **#174** |
+| "FastText / ONNX → #133 (segments)" | #133 explicitly excludes ML ("pure regex keyword matching"). FastText appears only as a trailing aside on #163 |
+| "Funnel baseline conversion rates → priors for the model, #150" / "#119 survives only as the prior table" | **Neither issue specifies the prior table.** #119 is entirely a salary dataset. The load-bearing input to the flagship feature was unspecified. Now **#176** |
+| "Diversification as capacity constraint → derived from adjacency (#158)" | That derivation is an **unchecked TODO** in #158, presented here as settled — and it is the exact parameter ADR-008 flags as the leaked founding-persona assumption |
+| "Arena, generational indices, slotmap/ECS, CSR, EBR → REJ-004" | REJ-004 does not mention **slotmap**, **ECS**, or **hazard pointers**. ECS is rejected only in prose elsewhere |
+
+Also corrected outside this table: the min-cost flow cost function was written `−log P × decay`, which **inverts the model** — it makes a min-cost solver prefer stale postings. Correct form is `−log( P · decay )`. It was wrong in four places and is now fixed in all of them (#152).
+
+Every substantive concept below, and where it landed.
 
 ## Job Application Conversion Metrics
 
@@ -260,6 +278,11 @@ Every substantive concept from the three source research documents, and where it
 | Structural biases (audit-study callbacks) | #151 — attribution only |
 | Interview→offer conversion (30–50%) | Transition in the model — #150 |
 | Ingratiation / impression management | ❌ REJ-007 |
+| **Conversion prior table (α, β, provenance)** | **#176** — was unspecified; both prior pointers led to a salary dataset |
+| **Sector dispersion (&lt;2% tech vs 4–10% broader corporate)** | **#179** — a single global prior is wrong by up to 5× |
+| **Scheduling latency (20% of leakage), posting liveness (16%), interview-process burden** | **#177** — REJ-007 covered only the 32% row |
+| **Degree-credential filter; hard gates need a different model shape; 60–75% pre-review filter rate** | **#178** |
+| Onboarding leakage (18%) | Post-offer — out of scope; recorded in #177 rather than left silent |
 | 32% interview-stage pipeline leakage | ❌ REJ-007 — not observable by this tool |
 
 ## Lightweight Job Indexing Mechanism
@@ -274,7 +297,11 @@ Every substantive concept from the three source research documents, and where it
 | FastText / ONNX classification | #163 (embedding choice), #133 (segments) |
 | **zstd dictionary compression** | **#169** |
 | Local per-host rate limiting | #130 — enforced locally, never delegated |
-| Legal / GDPR / ToS boundary | Compliance section, `design/EVIDENCE_LAYER.md` |
+| **ATS JSON endpoints (`content=true`, `mode=json`, `includeCompensation=true`, Workday)** | **#173** — Tier 2, previously unfiled |
+| **Local per-host rate limiting (GCRA, local only)** | **#174** — the rejected distributed version had no successor |
+| **GDPR local case, retention, erasure, scraping legal test, anti-bot position** | **#175** |
+| Ryanair v. PR Aviation; EU Database Directive; UK CMA 1990 s3A | **#175** — reasoning restored, not just the operational rule |
+| Naive Bayes / cONNXr embedded inference | Not adopted — FastText is the chosen direction (#163); recorded so it is not re-proposed |
 | Kademlia DHT, S/Kademlia PoW, DCUtR, Merkle-CRDT, GCRA-in-DHT | ❌ REJ-001 |
 | Cuckoo / Bloom filters | ❌ REJ-005 |
 | LMDB | ❌ REJ-002 |
@@ -287,7 +314,14 @@ Every substantive concept from the three source research documents, and where it
 | Bipartite matching → **min-cost max-flow** | #152 — reformulated; plain max-cardinality matching is degenerate for one candidate |
 | Counterfactual re-solve | #153 |
 | Diversification as capacity constraint | #152, derived from adjacency (#158) |
-| Arena allocation, generational indices, slotmap/ECS, CSR, epoch-based reclamation | ❌ REJ-004 |
+| Arena allocation, generational indices, CSR, epoch-based reclamation | ❌ REJ-004 |
+| Slot maps, ECS archetype graphs, hazard pointers | ❌ Same reasoning as REJ-004 (wrong scale) — named here because REJ-004's text omits them |
+| **Vector-backed index graphs (`usize` into `Vec`, not `Rc<RefCell<_>>`)** | **Adopted** as a coding convention — `design/ALLOCATION_LAYER.md` §Representation. Orthogonal to scale; costs nothing |
+| **Full flow construction: slack edge, τ reservation cost, quantisation, decay form, archetype multiplicity** | **#152** — specified after the audit found it unimplementable as written |
+| Ford-Fulkerson, Hopcroft-Karp vs successive shortest paths | Recorded in `design/ALLOCATION_LAYER.md` §Implementation with reasoning, so the choice is not relitigated |
+| LP / Flux Balance Analysis formulation | **Live option** — one of three candidate resolutions to the #152/#167 knapsack conflict |
+| Belief propagation / message passing | Unadopted alternative to the sample-and-aggregate uncertainty method; noted in #152 discussion |
+| Stackless async / tokio concurrency model, epoll/io_uring | Already the codebase; per-host fan-out control is #174 |
 | Learned spatial indices (GLIN, Z-order) | ❌ REJ-009 |
 | Kademlia DHT | ❌ REJ-001 |
 | Flux Balance Analysis, Geneva-drive scheduling | Conceptual framing only — no implementation implied |

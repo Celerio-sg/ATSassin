@@ -65,19 +65,40 @@ Min-cost max-flow. Not maximum bipartite matching — with a single candidate th
 ```
                   [cap = weekly effort budget]
         source ───────────────────────────────▶ user
-                                                 │
-                        [cap = diversification cap per family]
-                                                 ▼
-                                          role archetype
-                                                 │
-                     [cap = 1, cost = −log P(callback) × decay(age)]
-                                                 ▼
-                                             posting
-                                                 │
-                                          [cap = 1]
-                                                 ▼
-                                               sink
+           │                                     │
+           │            [cap = diversification cap per family]
+           │                                     ▼
+           │                              role archetype
+           │                                     │
+           │         [cap = 1, cost = −log( P(callback) · decay(age) )]
+           │                                     ▼
+           │                                 posting
+           │                                     │
+           │                              [cap = 1]
+           │                                     ▼
+           └──[slack: cap = budget, cost = τ]──▶ sink
 ```
+
+### ⚠️ The cost function is `−log( P · decay )`, **not** `−log P × decay`
+
+This is worth stating explicitly because the wrong form is the natural thing to write and it inverts the whole model.
+
+With `decay ∈ (0,1]` shrinking as a posting ages, **multiplying** by decay *reduces* the cost of stale postings, and a min-cost solver therefore **prefers** them:
+
+| Posting | P(callback) | decay | `−log P × decay` ✗ | `−log(P · decay)` ✓ |
+|---|---|---|---|---|
+| fresh, 1 day | 0.10 | 1.0 | 2.303 | 2.303 |
+| stale, 34 days | 0.10 | 0.3 | **0.691 → preferred** | **3.507 → penalised** |
+
+Only the additive form (`−log P − log decay`) makes cost *increase* with age, which is what the <7-day review-bandwidth finding requires. Implement `−log(P · decay)` or equivalently `−log P − log decay`.
+
+### The slack edge is load-bearing
+
+Min-cost **max**-flow saturates the source edge: with all-positive costs it will always spend the entire budget, even on postings not worth applying to. That contradicts [ADR-008](../DECISIONS.md), which requires a slate of 1 — or 0 — to be reachable.
+
+The `source → sink` slack edge above fixes it. `τ` is the **reservation cost**: the cost of *not* using a unit of budget. Any posting whose edge cost exceeds `τ` is left unselected because routing flow through slack is cheaper. `τ` is therefore the relevance floor, expressed inside the graph rather than as a pre-filter, and it must be user-visible and tunable — it is the knob that says "don't put things on my slate that aren't worth it."
+
+Set `τ = −log(P_min)` where `P_min` is the lowest callback probability the user considers worth an application.
 
 Each element earns its place:
 
@@ -96,9 +117,45 @@ Layer 2 returns intervals, not point estimates. Two options, in order of prefere
 
 Option 2 is preferred once Layer 2 has enough data to make the posteriors distinguishable. Below that, option 1 with a prominent `prior_dominated` flag.
 
+## Fully specified construction
+
+Everything a contributor needs, so the data structure and the details are not chosen by coin flip.
+
+| Element | Value |
+|---|---|
+| `source → user` | cap = effort budget (derived or asked); cost 0 |
+| `source → sink` (slack) | cap = effort budget; cost = `τ` = `−log(P_min)` |
+| `user → archetype` | cap = diversification cap for that family; cost 0 |
+| `archetype → posting` | cap 1; cost = `−log( P(callback) · decay(age) )` |
+| `posting → sink` | cap 1; cost 0 |
+
+**Posting-to-archetype multiplicity.** A posting may plausibly belong to several role families. Assign each posting to **exactly one** archetype — its highest-scoring — otherwise the diversification cap is unenforceable, since flow could reach one posting through several archetype edges and evade the cap. Record the alternates for display; do not add parallel edges.
+
+**Cost quantisation.** Successive shortest paths wants integer costs. Scale by a fixed factor (suggest 10⁴) and round: `cost_int = round(−log(P · decay) × 10_000)`. Document the factor — it bounds the precision of every allocation decision. Ties break on `(posting.id)` ascending so the solver is deterministic, which acceptance criterion 1 requires.
+
+**Decay functional form.** Exponential with a documented half-life: `decay(age_days) = 0.5^(age_days / h)`. `h` is derived from observed data once Layer 2 has it, and is a documented parameter until then — not a hardcoded constant ([ADR-008](../DECISIONS.md)). Postings past `validThrough` (#149) are excluded from the graph entirely rather than decayed.
+
+**Representation.** Vector-backed with `usize` indices into a `Vec<Edge>`, not `Rc<RefCell<Node>>`. This is a coding convention rather than a scale-driven optimisation — it costs nothing, avoids fighting the borrow checker in a ~200-line solver, and is the one piece of the graph-engineering research that applies at any scale. The graph is rebuilt per solve; there is no mutation hot loop, so none of the arena/CSR/generational-index machinery is warranted ([REJ-004](../DECISIONS.md)).
+
+## ⚠️ Open conflict with #167 — resolve before implementing
+
+#167 requires that budget consumption be **effort-weighted** — a one-click apply and a 25-minute Workday form should not draw equally on the budget. That is correct product reasoning, and it is **not expressible in this formulation**: a flow network consumes exactly one unit of source capacity per unit of flow. Heterogeneous per-item consumption is a knapsack constraint, which turns a polynomial problem NP-hard and invalidates the "<100 ms for 5,000 postings" criterion.
+
+Three ways out, in preference order:
+
+1. **Quantise effort into integer units** and require `k` units per posting by giving each posting `k` parallel unit-capacity edges. Stays a flow problem, stays polynomial. Loses granularity, which is acceptable — effort estimates are coarse anyway.
+2. **Lagrangian relaxation** — fold effort into the cost term with a multiplier tuned so expected total effort meets the budget. Approximate, still polynomial.
+3. **Reformulate as an LP** with explicit bound constraints. Expressible and exact; heavier dependency, and worth noting the Flux Balance Analysis material in the graph-engineering research is exactly this shape — an LP over bounded flows — which is where that analogy earns its keep rather than being decorative.
+
+**Do not implement #152 and #167 independently and assume they compose.** They do not, as currently written.
+
 ## Implementation
 
-Successive shortest paths with potentials (Bellman-Ford init, then Dijkstra). Roughly 200 lines, or `petgraph`, which is already a plausible dependency.
+Successive shortest paths with potentials (Bellman-Ford init, then Dijkstra). Roughly 200 lines, or `petgraph` — note it is **not currently a dependency**, so adding it is a real decision, not a free one.
+
+**Why SSP:** costs are all non-negative (`−log` of a probability ≤ 1), the graph is small and layered, and SSP with potentials is the simplest correct choice at this scale. Network simplex and cost-scaling are faster asymptotically and not worth the complexity for a few thousand nodes. Since costs are non-negative, **Bellman-Ford initialisation is unnecessary** — potentials start at zero and Dijkstra suffices from the first iteration.
+
+**Not Hopcroft-Karp, not Ford-Fulkerson.** Hopcroft-Karp solves maximum-cardinality bipartite matching, which is degenerate here (one candidate) and cannot express costs at all. Ford-Fulkerson solves max-flow without costs. Neither expresses the objective; both are recorded here so the choice is not relitigated.
 
 Scale: a few thousand postings, tens of role archetypes, one user. **Milliseconds, single-threaded.** No arena allocation, no CSR, no lock-free structures, no epoch reclamation — see [REJ-004](../DECISIONS.md#rej-004--arena-allocation-generational-indices-csr-epoch-based-reclamation). The graph is rebuilt per solve; there is no mutation hot loop to optimise.
 
