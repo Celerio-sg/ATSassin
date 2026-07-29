@@ -80,7 +80,15 @@ The cap must be **derived from the profile's actual adjacency structure**, not a
 
 Derive the cap from the role-archetype inference already in the pipeline, in the correct direction: **tightly clustered archetypes mean low adjacency, so the cap should loosen toward `B`** (concentrate). Widely spread archetypes mean high adjacency, so the cap can tighten (explore). Do not hardcode either end.
 
-**Both ends need a guard, not just the specialist end.** A feasibility floor is required: **`cap ≥ ⌈B / F⌉`** where `F` is the number of families holding postings above the floor. Without it the generalist end silently under-fills — 6 viable archetypes with `cap = 1` and `B = 7` caps flow at 6 and dumps a budget unit into slack even when an excellent 7th posting exists in an already-used family. That is the same harm as the specialist case, on the other boundary.
+**Both ends need a guard, not just the specialist end.** Without a feasibility floor the generalist end silently under-fills — 6 viable archetypes with `cap = 1` and `B = 7` caps flow at 6 and strands a budget unit in slack even when a good 7th posting exists in an already-used family. Same harm as the specialist case, other boundary.
+
+The floor is **`Σᵢ min(cap, |Fᵢ|) ≥ min(B, Σᵢ|Fᵢ|)`** — the smallest cap that lets the *achievable* number of applications actually be spent.
+
+> **`⌈B / F⌉` is necessary but NOT sufficient, and an earlier draft of this document prescribed it.** It assumes every family holds at least that many above-floor postings; real distributions are skewed. With `B = 7` over family sizes `{6, 1}`, `⌈7/2⌉ = 4` admits only `4 + 1 = 5` of the 7 units — still under-filling by 2, the exact harm the floor exists to prevent. The correct condition gives **6**.
+>
+> Note the achievable-versus-nominal distinction matters too: six families of one posting with `B = 7` can only ever place 6 applications, so `cap = 1` is genuinely sufficient there. The floor reasons about achievable flow, not nominal budget.
+
+Implemented and tested as `engine::allocation::min_feasible_cap`, which takes the family sizes rather than a count.
 
 ## Formulation
 
@@ -151,7 +159,7 @@ Set **`τ = 1 − P_min`** where `P_min` is the lowest callback probability the 
 
 Implement the slack edge as **strictly preferred at equal cost**, or equivalently set `τ = 1 − P_min − ε` for a small `ε`. `P_min = 0` remains reachable, satisfying ADR-008's requirement that a fit floor of 0 be expressible — it just must not select worthless postings.
 
-**Implementer's check:** with every posting cost above `τ`, the solver must return an **empty** slate. If it returns a full one, the slack is attached to the wrong node.
+**Implementer's check:** with every posting cost **at or above** `τ`, the solver must return an **empty** slate. "At or above" is load-bearing — at `P_min = 0` a worthless posting costs exactly `τ`, and a strict test passes vacuously. If it returns a full one, the slack is attached to the wrong node.
 
 Each element earns its place:
 
@@ -210,7 +218,9 @@ Postings past `validThrough` are excluded rather than decayed, so the lower floo
 
 > These are no longer prose. `engine::allocation` implements the reference semantics and every invariant below is a test in that module, run by `cargo test` in CI.
 >
-> **The harness is mutation-verified.** Each of the six defect classes that actually shipped was deliberately reintroduced and confirmed to fail: the cost inversion (7 tests fail), the `p_min = 0` tie (1), the age-vs-output decay clamp (2), an unenforced family cap (3), a non-deterministic tie-break (1), and an objective maximising the product instead of the sum (2).
+> **The harness is mutation-verified, reproducibly.** `python scripts/mutation_check.py` reintroduces all eleven defects that have actually shipped in these specs and asserts the tests catch each one. It runs in CI and fails the build if any mutant survives.
+>
+> An earlier version of this note listed kill counts in prose. That was not reproducible — the mutants lived nowhere, and a round-3 audit found two of the counts could not be reproduced *and* that the harness had two genuine blind spots the prose had claimed were covered (an `α↔β` transposition passing every calibration test while reporting 80% instead of 3%, and a bad decay fit passing every allocation test while making the allocator age-blind). Both are now caught. **A mutation claim whose mutants are not committed is an assertion, which is the thing this document refuses to accept.**
 >
 > **If a future edit to this document contradicts a test, the test is right and the document is wrong.**
 
@@ -310,7 +320,7 @@ Not selected, and why:
   VP Sales · Globex       — posted 34d ago, decayed below threshold
   Head of BD · Initech    — below comp floor
 
-Expected outcome: 0.3 – 1.3 callbacks  (n=12, prior-dominated)
+Expected outcome: 0.2 – 1.4 callbacks  (n=12, prior-dominated)
 ```
 
 The "not selected, and why" section is not a courtesy. It is the difference between a decision and an oracle, and it is what lets a user disagree with the tool on a specific ground rather than distrust it wholesale.

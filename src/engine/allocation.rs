@@ -67,6 +67,9 @@ pub enum Skipped {
     FamilyCapReached,
     /// Budget exhausted by higher-value postings.
     BudgetExhausted,
+    /// Inputs were not usable (NaN, or a bad decay fit). Never silently
+    /// treated as a good posting.
+    Unusable,
 }
 
 #[derive(Debug)]
@@ -96,12 +99,23 @@ pub struct Slate {
 /// `half_life_days` is fitted, so a bad fit reaching here is a live path.
 /// A `decay > 1` gives `p * decay > 1`, a negative cost, and Dijkstra with
 /// zero-initialised potentials then returns a wrong path *silently*.
-pub fn decay(age_days: f64, half_life_days: f64) -> f64 {
-    if !half_life_days.is_finite() || half_life_days <= 0.0 {
-        return 1.0; // refuse to trust a bad fit rather than propagate NaN
+pub fn decay(age_days: f64, half_life_days: f64) -> Option<f64> {
+    // A bad fit must fail LOUDLY. An earlier version returned 1.0 here,
+    // reasoning that it "refuses to trust a bad fit" - but 1.0 asserts every
+    // posting is maximally fresh, which makes the allocator age-blind and
+    // re-inverts invariant 1: with h <= 0 a 365-day posting ties a 1-day one
+    // and the id tie-break decides. That is the exact defect this module
+    // exists to prevent, reintroduced through the guard written to prevent it.
+    if half_life_days.is_nan() || half_life_days <= 0.0 {
+        return None;
     }
-    let d = 0.5_f64.powf(age_days / half_life_days);
-    d.clamp(0.0, 1.0)
+    if half_life_days.is_infinite() {
+        return Some(1.0); // the correct limit: no decay at all
+    }
+    if age_days.is_nan() {
+        return None;
+    }
+    Some(0.5_f64.powf(age_days / half_life_days).clamp(0.0, 1.0))
 }
 
 /// Edge cost. Linear, bounded in `[0, 1]`.
@@ -110,10 +124,16 @@ pub fn decay(age_days: f64, half_life_days: f64) -> f64 {
 /// callbacks. Two earlier forms were wrong: `-log p * decay` inverted the age
 /// direction, and `-log(p * decay)` maximised the *product* - the probability
 /// that every application succeeds, which nobody wants.
-pub fn cost(p_callback: f64, decay: f64) -> f64 {
-    let p = p_callback.clamp(0.0, 1.0);
-    let d = decay.clamp(0.0, 1.0);
-    1.0 - p * d
+pub fn cost(p_callback: f64, decay: f64) -> Option<f64> {
+    // f64::clamp PROPAGATES NaN, so clamping is not a guard. An unguarded NaN
+    // is selected (NaN >= tau is false), poisons expected_callbacks, and makes
+    // the sort comparator a non-total order - which on Rust >= 1.81 may panic
+    // or silently randomise the slate. debug_assert does not help: the release
+    // profile sets no debug-assertions.
+    if p_callback.is_nan() || decay.is_nan() {
+        return None;
+    }
+    Some(1.0 - p_callback.clamp(0.0, 1.0) * decay.clamp(0.0, 1.0))
 }
 
 /// Reservation cost: the price of leaving a unit of budget unspent.
@@ -125,32 +145,48 @@ pub fn tau(p_min: f64) -> f64 {
 /// families. Without this floor the generalist end silently under-fills:
 /// six families at `cap = 1` with a budget of seven strands a unit in slack
 /// even when a good seventh posting exists in an already-used family.
-pub fn min_feasible_cap(budget: usize, families: usize) -> usize {
-    if families == 0 {
+pub fn min_feasible_cap(budget: usize, family_sizes: &[usize]) -> usize {
+    // ceil(B/F) is NECESSARY BUT NOT SUFFICIENT: it assumes every family holds
+    // at least that many above-floor postings. Real distributions are skewed.
+    // B=7 over {f0: 6, f1: 1} gives ceil(7/2)=4, which still under-fills by 2 -
+    // the exact harm the floor exists to prevent. The correct condition is
+    // sum(min(cap, |Fi|)) >= B; here that needs cap = 6.
+    if family_sizes.is_empty() {
         return 1;
     }
-    budget.div_ceil(families).max(1)
+    let total: usize = family_sizes.iter().sum();
+    let target = budget.min(total);
+    (1..=target.max(1))
+        .find(|cap| family_sizes.iter().map(|n| (*n).min(*cap)).sum::<usize>() >= target)
+        .unwrap_or(target.max(1))
 }
 
 pub fn solve(candidates: &[Candidate], params: &Params) -> Slate {
-    let t = tau(params.p_min);
+    let mut skipped: Vec<(String, Skipped)> = Vec::new();
+    let mut scored: Vec<(&Candidate, f64)> = Vec::new();
 
-    let mut scored: Vec<(&Candidate, f64, f64)> = candidates
-        .iter()
-        .map(|c| {
-            let d = decay(c.age_days, params.half_life_days);
-            let value = c.p_callback.clamp(0.0, 1.0) * d;
-            let cst = cost(c.p_callback, d);
-            debug_assert!(
-                (0.0..=1.0).contains(&cst),
-                "cost {cst} outside [0,1] - a negative or unbounded cost breaks \
-                 the solver silently"
-            );
-            (c, value, cst)
-        })
-        .collect();
+    for c in candidates {
+        // Anything unusable is reported, never silently scored. A NaN that
+        // reaches the sort makes the comparator a non-total order, which on
+        // Rust >= 1.81 may panic or silently randomise the slate.
+        let Some(d) = decay(c.age_days, params.half_life_days) else {
+            skipped.push((c.id.clone(), Skipped::Unusable));
+            continue;
+        };
+        let Some(cst) = cost(c.p_callback, d) else {
+            skipped.push((c.id.clone(), Skipped::Unusable));
+            continue;
+        };
+        debug_assert!(
+            (0.0..=1.0).contains(&cst),
+            "cost {cst} outside [0,1] - a negative or unbounded cost breaks \
+             the solver silently"
+        );
+        scored.push((c, c.p_callback.clamp(0.0, 1.0) * d));
+    }
 
-    // Descending value; ties broken on id so the slate is byte-identical for
+    // Descending value; NaN is already excluded above, so the comparator is a
+    // total order. Ties break on id, making the slate byte-identical for
     // identical input regardless of scan order.
     scored.sort_by(|a, b| {
         b.1.partial_cmp(&a.1)
@@ -159,28 +195,31 @@ pub fn solve(candidates: &[Candidate], params: &Params) -> Slate {
     });
 
     let mut selected = Vec::new();
-    let mut skipped = Vec::new();
     let mut per_family: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     let mut expected = 0.0;
 
-    for (c, value, cst) in scored {
-        // Strictly cheaper than slack. Equality goes to slack: at p_min = 0
-        // a worthless posting costs exactly tau, and `<=` would fill the
-        // slate with zero-probability applications.
-        if cst >= t {
+    for (c, value) in scored {
+        // Tested on the VALUE scale, matching the spec's `P*decay > P_min`.
+        // Testing `1 - p*d >= 1 - p_min` instead loses low bits to cancellation
+        // and disagrees with the spec at the margin.
+        if value <= params.p_min {
             skipped.push((c.id.clone(), Skipped::BelowFloor));
+            continue;
+        }
+        // Family cap is checked BEFORE budget: when both bind, the cap is the
+        // constraint that survives budget relaxation, so it is the honest
+        // reason to show. Reporting BudgetExhausted would imply a counterfactual
+        // ("raise your budget") that a re-solve will not deliver.
+        let used = *per_family.get(c.archetype.as_str()).unwrap_or(&0);
+        if used >= params.family_cap {
+            skipped.push((c.id.clone(), Skipped::FamilyCapReached));
             continue;
         }
         if selected.len() >= params.budget {
             skipped.push((c.id.clone(), Skipped::BudgetExhausted));
             continue;
         }
-        let used = per_family.entry(c.archetype.as_str()).or_insert(0);
-        if *used >= params.family_cap {
-            skipped.push((c.id.clone(), Skipped::FamilyCapReached));
-            continue;
-        }
-        *used += 1;
+        *per_family.entry(c.archetype.as_str()).or_insert(0) += 1;
         expected += value;
         selected.push(c.id.clone());
     }
@@ -282,9 +321,9 @@ mod tests {
     /// Invariant 6. A future-dated posting must not produce a negative cost.
     #[test]
     fn invariant_6_future_dated_posting_stays_in_range() {
-        let d = decay(-30.0, 7.0);
+        let d = decay(-30.0, 7.0).expect("a future-dated posting is usable");
         assert!(d <= 1.0, "decay {d} exceeded 1 for a future-dated posting");
-        let k = cost(0.10, d);
+        let k = cost(0.10, d).expect("cost of a usable posting");
         assert!((0.0..=1.0).contains(&k), "cost {k} outside [0,1]");
     }
 
@@ -322,7 +361,7 @@ mod tests {
                     ok = false;
                     break;
                 }
-                let v = x.p_callback * decay(x.age_days, p.half_life_days);
+                let v = x.p_callback * decay(x.age_days, p.half_life_days).unwrap();
                 if 1.0 - v >= tau(p.p_min) {
                     ok = false;
                     break;
@@ -386,7 +425,7 @@ mod tests {
                     if mask & (1 << i) == 0 {
                         continue;
                     }
-                    let v = c.p_callback * decay(c.age_days, p.half_life_days);
+                    let v = c.p_callback * decay(c.age_days, p.half_life_days).unwrap();
                     if 1.0 - v >= tau(p.p_min) {
                         ok = false;
                         break;
@@ -441,20 +480,56 @@ mod tests {
         );
     }
 
-    /// A negative half-life has a *positive* age, so an age clamp misses it.
+    /// A bad fit must be REJECTED, not silently treated as maximally fresh.
+    ///
+    /// An earlier version returned `1.0` here on the reasoning that it
+    /// "refuses to trust a bad fit". It did the opposite: `decay = 1.0` for
+    /// every posting makes the allocator age-blind, so a 365-day posting ties
+    /// a 1-day one and the id tie-break decides - **re-inverting invariant 1**,
+    /// the exact defect this module exists to prevent. It survived all 15
+    /// tests, because none of them pinned the bad-fit value.
     #[test]
-    fn negative_half_life_cannot_produce_negative_cost() {
-        let d = decay(8.0, -7.0);
-        assert!(d <= 1.0, "decay {d} exceeded 1 with a negative half-life");
-        assert!((0.0..=1.0).contains(&cost(0.9, d)));
+    fn bad_decay_fit_is_rejected_not_treated_as_fresh() {
+        assert_eq!(decay(8.0, -7.0), None, "negative half-life must be rejected");
+        assert_eq!(decay(0.0, 0.0), None, "zero half-life yields NaN; reject it");
+        assert_eq!(decay(1.0, f64::NAN), None, "NaN half-life must be rejected");
+        // +inf is different: no decay at all is the correct limit.
+        assert_eq!(decay(50.0, f64::INFINITY), Some(1.0));
     }
 
-    /// `0.5^(0/0)` is NaN, and NaN propagates silently through comparisons.
+    /// The whole point of rejecting rather than defaulting: with a bad fit,
+    /// an ancient posting must not be selected over a fresh one.
     #[test]
-    fn zero_half_life_does_not_produce_nan() {
-        let d = decay(0.0, 0.0);
-        assert!(d.is_finite(), "decay was NaN for half_life = 0");
-        assert!(cost(0.5, d).is_finite());
+    fn bad_fit_does_not_let_an_ancient_posting_win() {
+        let cands = vec![c("ancient", "f", 0.10, 365.0), c("new", "f", 0.10, 1.0)];
+        let good = Params { budget: 1, p_min: 0.01, half_life_days: 7.0, family_cap: 9 };
+        assert_eq!(solve(&cands, &good).selected, vec!["new"]);
+
+        let bad = Params { half_life_days: -7.0, ..good.clone() };
+        let s = solve(&cands, &bad);
+        assert!(
+            s.selected.is_empty(),
+            "a bad fit must yield no slate, not an age-blind one: {:?}",
+            s.selected
+        );
+        assert!(s.skipped.iter().all(|(_, r)| *r == Skipped::Unusable));
+    }
+
+    /// NaN must never reach the sort: it makes the comparator a non-total
+    /// order, which can panic or silently randomise the slate on Rust >= 1.81.
+    /// `f64::clamp` PROPAGATES NaN, so clamping is not a guard.
+    #[test]
+    fn nan_inputs_are_rejected_not_selected() {
+        assert_eq!(cost(f64::NAN, 1.0), None);
+        assert_eq!(cost(0.5, f64::NAN), None);
+        let cands = vec![c("nan_p", "f", f64::NAN, 1.0), c("ok", "f", 0.5, 1.0)];
+        let s = solve(&cands, &params(2, 0.05, 9));
+        assert_eq!(s.selected, vec!["ok"]);
+        assert!(s
+            .skipped
+            .iter()
+            .any(|(id, r)| id == "nan_p" && *r == Skipped::Unusable));
+        assert!(s.expected_callbacks.is_finite(), "a NaN poisoned the objective");
     }
 
     /// The cap is a per-family *maximum*: 1 forces maximum spread,
@@ -482,7 +557,16 @@ mod tests {
     /// budget silently under-fills.
     #[test]
     fn feasibility_floor_prevents_generalist_underfill() {
-        assert_eq!(min_feasible_cap(7, 6), 2);
+        // Six families of one posting and a budget of seven: only SIX
+        // applications are achievable, so cap 1 genuinely suffices. The
+        // function reasons about achievable flow, not nominal budget.
+        assert_eq!(min_feasible_cap(7, &[1, 1, 1, 1, 1, 1]), 1);
+        // Balanced and genuinely binding: four families of two, budget seven.
+        assert_eq!(min_feasible_cap(7, &[2, 2, 2, 2]), 2);
+        // SKEWED: ceil(B/F) = ceil(7/2) = 4 is NOT enough here. With sizes
+        // {6, 1} a cap of 4 admits only 4+1 = 5 of the 7 budget units. The
+        // correct condition is sum(min(cap, |Fi|)) >= B, giving 6.
+        assert_eq!(min_feasible_cap(7, &[6, 1]), 6);
         let cands: Vec<_> = (0..6)
             .map(|i| c(&format!("p{i}"), &format!("f{i}"), 0.5, 0.0))
             .collect();
@@ -490,7 +574,7 @@ mod tests {
         let starved = solve(&cands, &params(7, 0.05, 1));
         assert_eq!(starved.selected.len(), 6, "6 families at cap 1 strand a unit");
 
-        let cap = min_feasible_cap(7, 6);
+        let cap = min_feasible_cap(7, &[2, 1, 1, 1, 1, 1]);
         let extra = c("p6", "f0", 0.5, 0.0);
         let mut with_extra = cands.clone();
         with_extra.push(extra);

@@ -235,7 +235,7 @@ Solving for minimum cost yields the optimal *slate*, and each structural element
 - **Edge costs from Layer 2** mean the objective is the user's own measured conversion probabilities, not industry benchmarks.
 - **Age decay** operationalises the <7-day review-bandwidth window as a real term in the objective rather than a tip in the docs.
 
-**An earlier draft claimed greedy ranking is provably suboptimal here. That was wrong** — the specified constraint set is a truncated partition matroid with a modular objective, which greedy solves exactly, and the "a 1-day-old posting can wait a cycle" argument needs a multi-period model that does not exist. The flow formulation earns its place because effort weighting and posting liveness will break the matroid, not because sorting fails today.
+**An earlier draft claimed greedy ranking is provably suboptimal here. That was wrong** — the specified constraint set is a truncated partition matroid with a modular objective, which greedy solves exactly, and the "a 1-day-old posting can wait a cycle" argument needs a multi-period model that does not exist. The flow formulation earns its place because **effort weighting** breaks the matroid — that is the only surviving justification. Posting liveness was also claimed and is wrong: removing postings is a matroid restriction, which is still a matroid.
 
 **On implementation cost:** min-cost max-flow over a few thousand nodes is *milliseconds*, single-threaded, in stock Rust. Successive shortest paths is ~200 lines, or `petgraph` — already a candidate dependency — provides it. No arena, no CSR, no lock-free structures, no new heavy dependency. The hardware floor is untouched.
 

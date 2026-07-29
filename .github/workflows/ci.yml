@@ -42,6 +42,9 @@ jobs:
       # Catches stale/rejected issue pointers, broken doc links, drifted
       # measured claims, and new ADR-002 fabrication sites. Every check here
       # maps to a defect that actually shipped - see the module docstring.
+      - name: Mutation-check the mathematical harness
+        run: python scripts/mutation_check.py
+
       - name: Docs consistency
         run: python scripts/check_docs_consistency.py --with-tracker
         env:

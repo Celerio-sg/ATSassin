@@ -101,7 +101,7 @@ See [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
 
 **Why:** ranked lists are a commodity, and the user's binding constraint is a finite budget of genuinely-tailored applications against a decaying opportunity set.
 
-**Do not repeat the claim that "greedy is provably suboptimal".** Under the constraint set as currently specified the feasible sets form a truncated partition matroid with a modular objective, which greedy solves *exactly*. The flow formulation is justified because the constraint set will not stay a matroid — #167's effort weighting and posting liveness (#177) both break it — not because sorting fails today. **If effort weighting is descoped, greedy is the correct implementation and this layer should be simplified.** See [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
+**Do not repeat the claim that "greedy is provably suboptimal".** Under the constraint set as currently specified the feasible sets form a truncated partition matroid with a modular objective, which greedy solves *exactly*. The flow formulation is justified because the constraint set will not stay a matroid — **and exactly one thing breaks it: #167's effort weighting.** Posting liveness (#177) *removes* postings from the ground set, and a restriction of a matroid is still a matroid; multi-period scheduling with deadlines is itself a matroid. Both were claimed as justifications and both were wrong. **If effort weighting is descoped, greedy is the correct implementation and this layer should be simplified.** See [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
 
 ---
 
@@ -142,6 +142,19 @@ None was written in bad faith; each felt like precision at the time, because it 
 **The rules that follow:**
 
 1. **No constant that varies by circumstance.** Effort budgets, diversification caps, seniority bands, tailoring thresholds: derived from the user's own data, or asked. A number fitted to one profile and hardcoded is a defect, not a default.
+
+   **Amended 2026-07-29 — the *provisional* state.** As originally written this rule created a deadlock. Four issues (#163, #164, #174, #176) each need a starting value, none can derive one until outcome data exists, and the issue that would supply that data is itself blocked. Each independently offered "document it as provisional" as the way out — a permission the rule did not grant. A policy that stalls three P0s is a defect in the policy.
+
+   A parameter may ship **provisional** when all four hold:
+
+   | Requirement | Why |
+   |---|---|
+   | A **named constant**, not a literal buried at a call site | It must be findable |
+   | A comment stating **the evidence that would change it** | "derive from the observed distribution once #150 has ≥N outcomes", not "TODO tune" |
+   | **User-overridable** | The user is never trapped by our guess |
+   | Names **the issue that will derive it** | So it cannot be silently forgotten |
+
+   A provisional parameter failing any of these is still a defect. The distinction this rule was always reaching for is **an asserted constant versus a declared placeholder**: the first pretends to be knowledge, the second admits it is a starting point. `α+β ≈ 20` in the calibration layer is compliant on this reading; the `1.0 / 0.7 / 0.4` match weights in #132 are not, because nothing said what would change them.
 2. **A valid parameter range includes its degenerate case.** *No* diversification must be reachable — which in this construction is a per-family cap **equal to the budget**, not a cap of 1. (A cap of 1 is *maximum* diversification; an earlier draft of this rule had it backwards.) A slate of 1, and a slate of 0, must also be reachable.
 3. **Enumerated lists of human circumstance are assumed incomplete.** Structural factors, employment types, work arrangements, document formats. Default to adding, and never let the testing profile define the list's boundaries.
 4. **A single-profile result is an illustration, never a validation.** Label it as such in the text. Claims about how often a mechanism pays off require the multi-shape trial matrix in [TEST_STRATEGY.md](TEST_STRATEGY.md).
@@ -161,7 +174,7 @@ The product sits on the **earning-intelligence** side of a line it must not cros
 | "This posted range sits below 8 comparable postings for this role and region" | "You should ask for £X" |
 | "Relaxing your location constraint adds 0.9 expected interviews" | "You should relocate" |
 | "Your callback rate is below baseline; field experiments attribute much of that gap to screening effects on [factor]" | "You should remove that from your CV" |
-| "Applications you tailored deeply converted at 9–13%; lightly tailored at 2–5%" | "You should apply to fewer jobs" |
+| "Applications you tailored deeply converted at 7.6–15.8% (n=140); lightly tailored at 2–5%" | "You should apply to fewer jobs" |
 
 **The test:** can the claim be grounded in evidence the tool actually holds, and stated as a conditional or an observation? If it requires knowing the user's risk tolerance, finances, family situation, health, or what they want from their life — the tool does not know those things, and asserting them is advice wearing a data costume.
 
@@ -267,7 +280,7 @@ Corrections applied 2026-07-29:
 | "Diversification as capacity constraint → derived from adjacency (#158)" | That derivation is an **unchecked TODO** in #158, presented here as settled — and it is the exact parameter ADR-008 flags as the leaked founding-persona assumption |
 | "Arena, generational indices, slotmap/ECS, CSR, EBR → REJ-004" | REJ-004 does not mention **slotmap**, **ECS**, or **hazard pointers**. ECS is rejected only in prose elsewhere |
 
-Also corrected outside this table: the min-cost flow cost function was written `−log P × decay`, which **inverts the model** — it makes a min-cost solver prefer stale postings. Correct form is `−log( P · decay )`. It was wrong in four places and is now fixed in all of them (#152).
+Also corrected outside this table: the allocation cost function went through **three** forms. `−log P × decay` inverted the age direction (the solver preferred stale postings). `−log( P · decay )` fixed that but maximised `Π p` — the probability that *every* application succeeds — rather than expected callbacks. **The correct form is `1 − P·decay`**, and it is now executable: `engine::allocation::cost`. Where any document disagrees with that function, the function is right.
 
 Every substantive concept below, and where it landed.
 

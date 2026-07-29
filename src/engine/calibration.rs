@@ -26,21 +26,39 @@ pub struct Beta {
 impl Beta {
     /// Build a prior from a published rate and a strength in effective
     /// observations, so the prior mean is exactly `p_bar`.
-    pub fn prior(p_bar: f64, strength: f64) -> Self {
+    /// Returns `None` unless `strength > 0` and finite. With `strength = 0`
+    /// both parameters are zero, `mean()` is `0.0/0.0 = NaN`, and that NaN
+    /// walks into the allocator - where it is selected, poisons the objective,
+    /// and makes the sort comparator a non-total order. `strength` is a
+    /// *derived* parameter (#176 owns it), so a bad derivation reaching here
+    /// is a live path rather than a hypothetical.
+    pub fn prior(p_bar: f64, strength: f64) -> Option<Self> {
+        if !strength.is_finite() || strength <= 0.0 || p_bar.is_nan() {
+            return None;
+        }
         let p = p_bar.clamp(0.0, 1.0);
-        Beta {
+        Some(Beta {
             alpha: p * strength,
             beta: (1.0 - p) * strength,
-        }
+        })
     }
 
     /// Conjugate update: `k` successes in `n` trials.
-    pub fn update(self, k: u32, n: u32) -> Self {
-        debug_assert!(k <= n, "successes {k} exceeded trials {n}");
-        Beta {
+    ///
+    /// Validated at the boundary rather than by `debug_assert`. The release
+    /// profile sets no `debug-assertions` and no `overflow-checks`, so with
+    /// `k > n` the old version wrapped the `u32` subtraction and produced
+    /// `beta = 4.29e9` - destroying the posterior silently, which then reads
+    /// as "nothing was worth applying to". A double-counted callback is not
+    /// exotic; it is one ingestion bug away.
+    pub fn update(self, k: u32, n: u32) -> Option<Self> {
+        if k > n {
+            return None;
+        }
+        Some(Beta {
             alpha: self.alpha + k as f64,
             beta: self.beta + (n - k) as f64,
-        }
+        })
     }
 
     pub fn mean(&self) -> f64 {
@@ -64,7 +82,18 @@ pub fn prior_weight(strength: f64, n: u32) -> f64 {
 /// `n < strength`. Derived from the model rather than a hand-picked floor,
 /// which would be exactly the asserted constant ADR-008 bans.
 pub fn prior_dominated(strength: f64, n: u32) -> bool {
-    prior_weight(strength, n) > 0.5
+    // With strength = 0, prior_weight is 0.0/0.0 = NaN and `NaN > 0.5` is
+    // false - so a user with ZERO observations was reported as having a
+    // *personal* estimate, violating acceptance criterion 6. Zero data is
+    // always prior-dominated, whatever the strength.
+    if n == 0 {
+        return true;
+    }
+    let w = prior_weight(strength, n);
+    if w.is_nan() {
+        return true; // cannot establish a personal estimate; say so
+    }
+    w > 0.5
 }
 
 /// Regularised incomplete beta `I_x(a,b)`, via the continued fraction in
@@ -204,7 +233,7 @@ mod tests {
 
     #[test]
     fn prior_mean_equals_the_published_rate() {
-        let p = Beta::prior(0.115, STRENGTH);
+        let p = Beta::prior(0.115, STRENGTH).unwrap();
         assert!((p.mean() - 0.115).abs() < 1e-12);
         assert!((p.concentration() - STRENGTH).abs() < 1e-12);
     }
@@ -215,7 +244,7 @@ mod tests {
     fn shrinkage_identity_holds() {
         let p_bar = 0.10;
         let (k, n) = (1u32, 12u32);
-        let post = Beta::prior(p_bar, STRENGTH).update(k, n);
+        let post = Beta::prior(p_bar, STRENGTH).unwrap().update(k, n).unwrap();
         let w = prior_weight(STRENGTH, n);
         let weighted = w * p_bar + (1.0 - w) * (k as f64 / n as f64);
         assert!(
@@ -252,18 +281,58 @@ mod tests {
         assert!(!prior_dominated(STRENGTH, 140));
     }
 
+    /// Ground truth against analytic closed forms.
+    ///
+    /// **These assertions must be ASYMMETRIC in `(a, b)`.** An earlier version
+    /// used only Beta(1,1) twice and Beta(2,2) - all symmetric - so an
+    /// `alpha <-> beta` transposition, the single most likely bug in a
+    /// hand-rolled incomplete beta, passed **every** test in this module while
+    /// reporting a callback rate of 80-97% instead of 3-20%. Interval *width*
+    /// is also invariant under transposition, so no width test catches it
+    /// either.
     #[test]
     fn beta_cdf_matches_known_values() {
-        // Beta(1,1) is uniform.
+        // Symmetric cases: necessary but not sufficient.
         assert!((beta_cdf(1.0, 1.0, 0.25) - 0.25).abs() < 1e-9);
         assert!((beta_cdf(1.0, 1.0, 0.80) - 0.80).abs() < 1e-9);
-        // Beta(2,2) CDF at 0.5 is 0.5 by symmetry.
         assert!((beta_cdf(2.0, 2.0, 0.5) - 0.5).abs() < 1e-9);
+
+        // ASYMMETRIC cases. I_x(2,1) = x^2 and I_x(1,2) = 1-(1-x)^2, which
+        // swap under transposition - so these two kill it outright.
+        assert!(
+            (beta_cdf(2.0, 1.0, 0.5) - 0.25).abs() < 1e-9,
+            "I_0.5(2,1) must be 0.25; a transposition gives 0.75"
+        );
+        assert!(
+            (beta_cdf(1.0, 2.0, 0.5) - 0.75).abs() < 1e-9,
+            "I_0.5(1,2) must be 0.75; a transposition gives 0.25"
+        );
+        assert!((beta_cdf(3.0, 1.0, 0.5) - 0.125).abs() < 1e-9);
+        assert!((beta_cdf(1.0, 3.0, 0.2) - 0.488).abs() < 1e-9);
+        // Skewed shapes in the range the model actually uses.
+        assert!((beta_cdf(2.0, 8.0, 0.2) - 0.56379238).abs() < 1e-6);
+    }
+
+    /// The transposition guard, stated as its own property so it cannot be
+    /// weakened by editing the table above: `I_x(a,b) = 1 - I_{1-x}(b,a)`.
+    /// A transposed implementation violates this for every asymmetric pair.
+    #[test]
+    fn beta_cdf_satisfies_the_reflection_identity() {
+        for &(a, b) in &[(2.0, 1.0), (2.3, 17.7), (3.3, 28.7), (17.6, 142.4)] {
+            for &x in &[0.05, 0.2, 0.5, 0.8, 0.95] {
+                let lhs = beta_cdf(a, b, x);
+                let rhs = 1.0 - beta_cdf(b, a, 1.0 - x);
+                assert!(
+                    (lhs - rhs).abs() < 1e-9,
+                    "reflection identity failed at Beta({a},{b}) x={x}: {lhs} vs {rhs}"
+                );
+            }
+        }
     }
 
     #[test]
     fn credible_interval_contains_the_level_it_claims() {
-        let post = Beta::prior(0.115, STRENGTH).update(1, 12);
+        let post = Beta::prior(0.115, STRENGTH).unwrap().update(1, 12).unwrap();
         let (lo, hi) = credible_interval(&post, 0.90);
         let actual = interval_level_of(&post, lo, hi);
         assert!(
@@ -282,7 +351,7 @@ mod tests {
             ("n=140 personal", 16u32, 140u32),
         ];
         for (label, k, n) in cases {
-            let post = Beta::prior(0.115, STRENGTH).update(k, n);
+            let post = Beta::prior(0.115, STRENGTH).unwrap().update(k, n).unwrap();
             let (lo, hi) = credible_interval(&post, 0.90);
             let actual = interval_level_of(&post, lo, hi);
             assert!(
@@ -307,7 +376,7 @@ mod tests {
     fn four_point_interval_needs_hundreds_of_observations() {
         let width_at = |n: u32| {
             let k = (0.11 * n as f64).round() as u32;
-            let post = Beta::prior(0.115, STRENGTH).update(k, n);
+            let post = Beta::prior(0.115, STRENGTH).unwrap().update(k, n).unwrap();
             let (lo, hi) = credible_interval(&post, 0.90);
             hi - lo
         };
@@ -324,7 +393,7 @@ mod tests {
     /// A user with no history gets the prior, and the tool must say so.
     #[test]
     fn zero_history_is_prior_dominated() {
-        let post = Beta::prior(0.115, STRENGTH).update(0, 0);
+        let post = Beta::prior(0.115, STRENGTH).unwrap().update(0, 0).unwrap();
         assert!(prior_dominated(STRENGTH, 0));
         assert!((post.mean() - 0.115).abs() < 1e-12);
     }
