@@ -195,6 +195,16 @@ The deletion argument for Cuckoo over Bloom is correct in principle. But the vis
 
 Cross-board syndication is real and near-duplicate detection is genuinely needed. But LSH banding tuned at b=9/r=13 targets billions of documents. At a few thousand, a 64-bit SimHash with Hamming-distance bucketing is sufficient and roughly 100 lines. The idea is adopted; the implementation scale is not.
 
+## REJ-009 — Learned spatial indices (GLIN, Z-order curve, learned CDF)
+
+**Status:** Rejected as premature
+
+The proposal replaces tree-based spatial indexes with a small neural model that learns the cumulative distribution mapping Z-order addresses to record positions, claiming large speedups over cache-optimised B-trees and 40–70× less storage overhead.
+
+The claims are plausible for the workload they target: hundreds of millions of geo-indexed records under high-frequency insertion. ATSassin does location matching over a few thousand postings held in SQLite, where location filtering is a string comparison against user preferences and takes microseconds. There is no spatial index to replace, and adding a learned model would mean introducing an inference dependency and a training step to optimise something currently unmeasurable — against a stated 4 GB CPU-only hardware floor.
+
+*Revisit if:* location matching becomes genuinely geometric (commute-radius or isochrone queries over a large local corpus) **and** profiling attributes meaningful wall-clock to spatial lookup.
+
 ## REJ-007 — Ingratiation and interview behavioural coaching
 
 **Status:** Rejected on scope and ethics
@@ -206,3 +216,54 @@ The research shows ingratiation tactics drive perceived Person-Organization fit,
 **Status:** Rejected permanently
 
 Callback-penalty data for minority names, employment gaps, and prior self-employment enters the calibration model **only as attribution**, never as advice. Any feature suggesting name anglicisation, gap concealment, or similar is out of scope permanently, regardless of measured efficacy.
+
+---
+
+# Concept traceability
+
+Every substantive concept from the three source research documents, and where it landed. Anything not here was not considered — if you spot a gap, that is a bug in this table.
+
+## Job Application Conversion Metrics
+
+| Concept | Disposition |
+|---|---|
+| Funnel baseline conversion rates | Priors for the model — #150 |
+| Tailoring-depth lift (1–3% → 8–15%) | Fitted feature — #150 |
+| Early submission velocity (<7 days) | Latency feature #150; age decay #152; real dates #149 |
+| **Keyword paradox** (AUC 0.558; density negatively correlated with output) | **#168** — separate filter-pass likelihood from fit |
+| **Application friction** (12.47% → 3.61% by form length) | **#167** — effort-weighted budget |
+| **Negative duration dependence** (half supply-, half demand-side) | **#167** — time-varying baseline with controllable/structural split |
+| Structural biases (audit-study callbacks) | #151 — attribution only |
+| Interview→offer conversion (30–50%) | Transition in the model — #150 |
+| Ingratiation / impression management | ❌ REJ-007 |
+| 32% interview-stage pipeline leakage | ❌ REJ-007 — not observable by this tool |
+
+## Lightweight Job Indexing Mechanism
+
+| Concept | Disposition |
+|---|---|
+| CNAME enumeration | #147 |
+| ATS JSON API endpoints | #130, #149 (tier 2) |
+| `__NEXT_DATA__` SSR hydration | #148 |
+| Schema.org JSON-LD `JobPosting` | #149 — the universal tier |
+| **MinHash/LSH near-duplicate detection** | **#166** — adopted as SimHash at this scale (REJ-006) |
+| FastText / ONNX classification | #163 (embedding choice), #133 (segments) |
+| **zstd dictionary compression** | **#169** |
+| Local per-host rate limiting | #130 — enforced locally, never delegated |
+| Legal / GDPR / ToS boundary | Compliance section, `design/EVIDENCE_LAYER.md` |
+| Kademlia DHT, S/Kademlia PoW, DCUtR, Merkle-CRDT, GCRA-in-DHT | ❌ REJ-001 |
+| Cuckoo / Bloom filters | ❌ REJ-005 |
+| LMDB | ❌ REJ-002 |
+| Partitioned Elias-Fano, Block-Max WAND, MaxScore | ❌ REJ-003 |
+
+## Rust Graph Engineering
+
+| Concept | Disposition |
+|---|---|
+| Bipartite matching → **min-cost max-flow** | #152 — reformulated; plain max-cardinality matching is degenerate for one candidate |
+| Counterfactual re-solve | #153 |
+| Diversification as capacity constraint | #152, derived from adjacency (#158) |
+| Arena allocation, generational indices, slotmap/ECS, CSR, epoch-based reclamation | ❌ REJ-004 |
+| Learned spatial indices (GLIN, Z-order) | ❌ REJ-009 |
+| Kademlia DHT | ❌ REJ-001 |
+| Flux Balance Analysis, Geneva-drive scheduling | Conceptual framing only — no implementation implied |
