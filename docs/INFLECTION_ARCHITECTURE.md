@@ -67,6 +67,28 @@ The `.gitignore` is otherwise scrupulous about exactly this class of file (`:16`
 
 **Fix:** replace scenario_1 with a synthetic persona (the other four already are); move both stray files out of the tree; add `.freebuff/` and a root-level CV pattern to `.gitignore`.
 
+## Correction — this review's stub hunt had a blind spot
+
+The Phase 1 sweep searched for `todo!()`, `unimplemented!()`, `TODO`, `FIXME`, `"stub"`, `"placeholder"` and similar markers, and reported the production paths clean. A follow-up audit on the same day found that conclusion was **too narrow to be useful**.
+
+The dangerous case carries no marker. It compiles, returns plausibly-shaped data, and is indistinguishable from a working implementation at every call site:
+
+```rust
+// profile_parser.rs:631 — the parameter is discarded
+fn extract_education(_text: &str) -> Vec<Education> {
+    vec![Education { institution: "Unknown".into(), degree: "N/A".into(), … }]
+}
+```
+
+That fabricates an education entry for **100% of markdown/DOCX/portfolio users**, and it reaches their generated resume (#162). A marker search will never find it.
+
+Two more of the same class, both missed for the same reason:
+
+- `matcher.rs:183-190` — `semantic_score` returns the **L2 norm of a single embedding** of the concatenated job and resume. It is not a similarity: there is no second vector and no cosine. It carries **0.40, the largest weight** in the composite (#163).
+- `prompts.rs:89` — the six rubric dimensions are undefined noun phrases, "North-star alignment" is scored against a target never supplied, and the candidate's **name** sits in the same prompt that scores "Cultural signals" (#164).
+
+**The lesson for future audits:** search for *semantic* stubs, not lexical ones. Concretely — functions whose parameters are `_`-prefixed but which return constructed data; functions returning a constant where a computation is implied; and any scoring component that can be checked against its own definition (a similarity that never compares two things is the tell). A grep-based CI check for the first pattern is part of #162.
+
 ## P1 — Honest-failure violations
 
 The project's fourth design principle is "honest failure over fabricated plausibility." Four places break it, and the first one matters most for Phase 2.
