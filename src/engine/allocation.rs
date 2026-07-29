@@ -340,6 +340,81 @@ mod tests {
         );
     }
 
+    /// Invariant 7, strengthened. The fixed 5-candidate case above can only
+    /// catch gross errors. This randomises candidates, families, budgets,
+    /// caps and floors, and brute-forces the exact optimum each time - so the
+    /// "greedy is optimal on this matroid" claim is verified rather than
+    /// asserted, across cases nobody hand-picked.
+    #[test]
+    fn invariant_7_randomised_greedy_matches_brute_force() {
+        // Deterministic LCG: a fixed seed keeps CI reproducible.
+        let mut seed = 0x2545F4914F6CDD1Du64;
+        let mut rnd = || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((seed >> 33) as f64) / ((1u64 << 31) as f64)
+        };
+
+        for _ in 0..400 {
+            let n = 3 + (rnd() * 7.0) as usize;
+            let fams = 1 + (rnd() * 4.0) as usize;
+            let budget = 1 + (rnd() * 5.0) as usize;
+            let cap = 1 + (rnd() * 3.0) as usize;
+            let p_min = rnd() * 0.3;
+            let cands: Vec<Candidate> = (0..n)
+                .map(|i| Candidate {
+                    id: format!("p{i:02}"),
+                    archetype: format!("f{}", i % fams),
+                    p_callback: rnd(),
+                    age_days: rnd() * 60.0,
+                })
+                .collect();
+            let p = Params {
+                budget,
+                p_min,
+                half_life_days: 7.0,
+                family_cap: cap,
+            };
+            let ours = solve(&cands, &p).expected_callbacks;
+
+            let mut best = 0.0f64;
+            for mask in 0u32..(1u32 << n) {
+                let mut fam: std::collections::HashMap<&str, usize> = Default::default();
+                let (mut cnt, mut tot, mut ok) = (0usize, 0.0f64, true);
+                for (i, c) in cands.iter().enumerate() {
+                    if mask & (1 << i) == 0 {
+                        continue;
+                    }
+                    let v = c.p_callback * decay(c.age_days, p.half_life_days);
+                    if 1.0 - v >= tau(p.p_min) {
+                        ok = false;
+                        break;
+                    }
+                    cnt += 1;
+                    if cnt > budget {
+                        ok = false;
+                        break;
+                    }
+                    let e = fam.entry(c.archetype.as_str()).or_insert(0);
+                    *e += 1;
+                    if *e > cap {
+                        ok = false;
+                        break;
+                    }
+                    tot += v;
+                }
+                if ok && tot > best {
+                    best = tot;
+                }
+            }
+            assert!(
+                best - ours < 1e-9,
+                "greedy got {ours}, optimum {best} (n={n} fams={fams}                  budget={budget} cap={cap} p_min={p_min:.3})"
+            );
+        }
+    }
+
     /// Invariant 8. Off-by-one in the budget.
     #[test]
     fn invariant_8_budget_of_one() {
