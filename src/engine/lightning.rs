@@ -18,9 +18,9 @@
 //! They should be verified against the current Lightning AI documentation and
 //! updated in this module if the provider's API surface changes.
 
+use crate::engine::egress::ValidatedTrainingPayload;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 /// Training job status returned by Lightning AI.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,7 +86,7 @@ impl LightningClient {
         }
     }
 
-    /// Submit a fine-tuning job using the provided JSONL training file.
+    /// Submit a fine-tuning job using bytes that passed the egress gate.
     ///
     /// The current Lightning AI public API surface is modelled as a
     /// multi-part upload followed by a job creation call. If the provider
@@ -94,18 +94,14 @@ impl LightningClient {
     pub async fn submit_training_job(
         &self,
         model: &str,
-        training_file: &Path,
+        training_payload: &ValidatedTrainingPayload,
     ) -> Result<LightningJob> {
-        if !training_file.exists() {
-            anyhow::bail!("Training file not found: {}", training_file.display());
-        }
-
         let upload_url = format!("{}{}", self.base_url, self.upload_path);
         let create_url = format!("{}{}", self.base_url, self.jobs_path);
 
-        let form = reqwest::multipart::Form::new()
-            .file("file", training_file)
-            .await?;
+        let file_part = reqwest::multipart::Part::bytes(training_payload.bytes().to_vec())
+            .file_name(training_payload.file_name().to_string());
+        let form = reqwest::multipart::Form::new().part("file", file_part);
 
         let upload_resp = self
             .client
@@ -206,6 +202,47 @@ impl LightningClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::pii_scrubber::ScrubContext;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        let header_end = loop {
+            let bytes_read = stream.read(&mut buffer).await.unwrap();
+            assert!(bytes_read > 0, "connection closed before request headers");
+            request.extend_from_slice(&buffer[..bytes_read]);
+            if let Some(index) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                break index + 4;
+            }
+        };
+        let headers = std::str::from_utf8(&request[..header_end]).unwrap();
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("content-length:")
+                    .or_else(|| line.strip_prefix("Content-Length:"))
+            })
+            .map(str::trim)
+            .map(|value| value.parse::<usize>().unwrap())
+            .unwrap_or(0);
+        while request.len() < header_end + content_length {
+            let bytes_read = stream.read(&mut buffer).await.unwrap();
+            assert!(bytes_read > 0, "connection closed before request body");
+            request.extend_from_slice(&buffer[..bytes_read]);
+        }
+        request
+    }
+
+    async fn respond(stream: &mut TcpStream, body: &str) {
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+    }
 
     #[test]
     fn status_display_works() {
@@ -251,5 +288,82 @@ mod tests {
             Some(v) => std::env::set_var("LIGHTNING_API_KEY", v),
             None => std::env::remove_var("LIGHTNING_API_KEY"),
         }
+    }
+
+    #[tokio::test]
+    async fn submit_uploads_the_exact_validated_bytes() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("training_pairs.jsonl");
+        let checked =
+            b"{\"instruction\":\"synthetic\",\"input\":\"marker-143\",\"output\":\"safe\"}\n";
+        std::fs::write(&path, checked)?;
+        let mut context = ScrubContext::default();
+        context.add_identity_term("Synthetic Candidate");
+        let payload = ValidatedTrainingPayload::from_jsonl(&path, &context)?;
+
+        // A later path mutation cannot change the payload because validation
+        // owns the exact bytes that the client transmits.
+        std::fs::write(&path, b"{\"input\":\"Synthetic Candidate\"}\n")?;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(2);
+        let server = tokio::spawn(async move {
+            for response_body in [
+                r#"{"id":"file-1"}"#,
+                r#"{"id":"job-1","status":"pending","model":"fixture","message":""}"#,
+            ] {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let request = read_request(&mut stream).await;
+                request_tx.send(request).await.unwrap();
+                respond(&mut stream, response_body).await;
+            }
+        });
+
+        let client = LightningClient::new(&format!("http://{address}"), "test-key");
+        let job = client.submit_training_job("fixture", &payload).await?;
+        server.await?;
+
+        let upload = request_rx.recv().await.unwrap();
+        let create_job = request_rx.recv().await.unwrap();
+        assert!(
+            upload
+                .windows(checked.len())
+                .any(|window| window == checked),
+            "multipart upload must contain the exact checked bytes"
+        );
+        assert!(
+            !upload
+                .windows(b"Synthetic Candidate".len())
+                .any(|window| window == b"Synthetic Candidate"),
+            "post-validation file changes must not affect the upload"
+        );
+        assert!(create_job
+            .windows(b"file-1".len())
+            .any(|window| window == b"file-1"));
+        assert_eq!(job.id, "job-1");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejected_content_cannot_reach_an_http_server() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("training_pairs.jsonl");
+        std::fs::write(
+            &path,
+            "{\"instruction\":\"contact\",\"input\":\"Synthetic Candidate\",\"output\":\"safe\"}\n",
+        )?;
+        let mut context = ScrubContext::default();
+        context.add_identity_term("Synthetic Candidate");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        assert!(ValidatedTrainingPayload::from_jsonl(&path, &context).is_err());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept())
+                .await
+                .is_err(),
+            "validation failure must happen before any network connection"
+        );
+        Ok(())
     }
 }

@@ -1405,6 +1405,7 @@ impl Cli {
 
         let profile =
             crate::engine::profile_parser::ProfileParser::profile_from_text(&profile_text)?;
+        let scrub_context = crate::engine::pii_scrubber::ScrubContext::from_profile(&profile);
         let role_archetypes = if args.roles > 0 {
             let telemetry_path = cfg.database_path.with_extension("llm_telemetry.jsonl");
             let router = crate::engine::router::ModelRouter::from_llm_config(
@@ -1430,6 +1431,7 @@ impl Cli {
             &profile_text,
             &roles,
             output_dir,
+            &scrub_context,
         )?;
         let journal_path = cfg.database_path.with_extension("llm_telemetry.jsonl");
         let pair_count =
@@ -1437,6 +1439,7 @@ impl Cli {
                 &cfg.database_path,
                 &journal_path,
                 output_dir,
+                &scrub_context,
             )?;
         println!("Exported {} high-confidence training pair(s).", pair_count);
 
@@ -1450,11 +1453,16 @@ impl Cli {
             if !training_file.exists() {
                 println!("Lightning AI provider selected but no training_pairs.jsonl was generated; skipping training submission.");
             } else {
+                let training_payload = crate::engine::egress::ValidatedTrainingPayload::from_jsonl(
+                    &training_file,
+                    &scrub_context,
+                )
+                .context("Lightning AI training upload failed its egress check")?;
                 println!("Lightning AI provider detected. Submitting distillation job to Lightning AI training endpoint...");
                 match crate::engine::lightning::LightningClient::from_config(&cfg.llm) {
                     Ok(client) => {
                         match client
-                            .submit_training_job(&cfg.llm.default_model, &training_file)
+                            .submit_training_job(&cfg.llm.default_model, &training_payload)
                             .await
                         {
                             Ok(job) => {

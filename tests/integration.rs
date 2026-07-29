@@ -156,12 +156,16 @@ fn test_social_leads_to_jobs() -> Result<()> {
 #[test]
 fn test_distillation_pipeline_script_generation() -> Result<()> {
     use atsassin::engine::distillation::DistillationPipeline;
+    use atsassin::engine::pii_scrubber::ScrubContext;
     let temp_dir = tempfile::tempdir()?;
     let roles = vec!["Software Architect".to_string(), "AI Engineer".to_string()];
+    let mut scrub_context = ScrubContext::default();
+    scrub_context.add_identity_term("Synthetic Candidate");
     DistillationPipeline::export_training_data(
         "# Profile Text\nRust Specialist",
         &roles,
         temp_dir.path(),
+        &scrub_context,
     )?;
 
     assert!(temp_dir.path().join("training_data.jsonl").exists());

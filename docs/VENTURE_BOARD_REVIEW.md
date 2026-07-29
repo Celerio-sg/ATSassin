@@ -187,7 +187,7 @@ On 2026-07-25, 7 competitor tools were actually installed and run (not just read
 
 A line-by-line adversarial review ([INFLECTION_ARCHITECTURE.md](INFLECTION_ARCHITECTURE.md)) found three P0 defects. All are scheduled as Step 0 of the critical chain, and **the architecture above should be read as aspirational until they are fixed**.
 
-1. **The PII gate does not cover the file that leaves the machine.** In `cli.rs`, the gate runs at line 1429, `training_pairs.jsonl` is written at 1435, and that file is uploaded to Lightning AI at 1457 — the only file transmitted off-device is the one never checked. The gate additionally copies flagged PII files *outside* the directory it then deletes, and its detectors are US-only (a Singapore `+65` number matches nothing). This contradicts the claim at §6.5 and §9 that the gate "validates final output."
+1. **Historical finding — fixed by #143 (closed): the PII gate did not cover the file that left the machine.** The audit found that `training_pairs.jsonl` was written after the old directory scan and uploaded unchecked, while the abort path retained a flagged copy. The fixed boundary now validates and uploads the same owned bytes and makes no flagged copy. Detector breadth remains open in #81.
 
 2. **Job identity is random.** All three scan paths assign v4 UUIDs, and the schema has no uniqueness constraint on `url`. The same posting scanned twice becomes two rows; the evaluation cache can never hit; the daemon re-evaluates every job every hour indefinitely at full LLM cost. A live trial on 2026-07-29 found **8 of the top 20 recommendations were duplicates of other entries**. This made continuous market-watch (#121) unshippable as designed.
 
@@ -606,7 +606,7 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 >
 > **Still live and independent of the chain:** Stage 0 (#46) and Stage 1 (#47). Adapter distribution stays on the HTTP registry indefinitely rather than graduating to P2P. Priority is below the critical chain.
 >
-> **One guardrail below is now known false.** The table states the PII gate "blocks export if detectable PII remains". It does not — the file actually uploaded off-device is written *after* the gate runs and is never checked (#143), and the detectors are US-only (#81). Do not build sharing on that gate until both land.
+> **Guardrail status corrected.** The historical unchecked-upload defect is fixed (#143 closed): the exact owned bytes are checked immediately before egress. Detector breadth remains open in #81, so this is deterministic containment rather than universal NER; do not build sharing until that remaining Step 0 work lands.
 
 **Design philosophy:**
 - Share LoRA adapters (10-200 MB), not whole models. Adapters apply to a base model the user already has locally.
@@ -642,7 +642,7 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 
 | Concern | Mitigation |
 |---------|------------|
-| PII leakage | ✅ PII scrubber implemented. Scrubs training pairs before any sharing. PII gate blocks export if detectable PII remains. |
+| PII leakage | ✅ Exact-byte egress containment fixed (#143 closed). Candidate-derived identity values are scrubbed and validation fails before networking. Broader deterministic coverage remains #81. |
 | Malicious weights | Accept only GGUF/Safetensors. Reject pickled `.pt`/`.bin`. Verify SHA-256. |
 | Unverifiable provenance | Treat lineage as claim. Rank by observed quality. |
 | ToS violations | No automated signup for free credits. Bandwidth caps through Compute Broker. |
@@ -655,7 +655,7 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 
 > **Rejected. Do not implement.** Issue #105 is closed; see [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt).
 >
-> Two grounds. First, it creates **new outbound data paths** while the existing one is known to leak — the PII gate does not cover the file uploaded off-device (#143), and the detectors are US-only. Building a second egress path on that foundation is the wrong order of work. Second, the architecture is **per-user by construction**: Layer 2 fits a conversion model from the user's own local outcome data, and the privacy architecture is precisely what makes that layer defensible against cloud competitors. A pooled cross-user corpus has no role in it.
+> Two grounds. First, it creates **new outbound data paths**. The historical upload defect is fixed (#143 closed), but broadening egress remains the wrong architectural direction and detector coverage is still deliberately bounded. Second, the architecture is **per-user by construction**: Layer 2 fits a conversion model from the user's own local outcome data, and the privacy architecture is precisely what makes that layer defensible against cloud competitors. A pooled cross-user corpus has no role in it.
 >
 > The underlying goal — better board coverage without every instance rediscovering the same sources — is met instead by the extraction ladder (#147, #148, #149), which **derives** sources rather than pooling them.
 
@@ -807,14 +807,14 @@ Milestones in GitHub mirror these four groups. Tracking epic: **#156**.
 | Item | Issue | Size | Blocks |
 |---|---|---|---|
 | Canonical content-addressed job IDs | **#142** | M | Everything |
-| PII gate at single pre-upload choke point | **#143** | M | Any egress work |
-| International PII detectors | #81 | S | #143 |
+| PII gate at single pre-upload choke point | **#143 closed — fixed** | M | Any egress work |
+| International PII detectors | #81 | S | #143 closed; containment prerequisite fixed |
 | Remove fabricated data (dates, 0.5 evals, roles research) | **#144** | S | Layers 2, 3 |
 | Stop swallowing scraper errors | **#145** | S | Layer 1 |
 | Replace real-person UAT fixture | #146 | S | — |
 | Compensation floor: extract, prompt, stop defaulting | #155 | M | Layer 3 |
 | Remove OpenSSL/native-tls (3 paths) | #67 | S | — |
-| Merge prompt sanitisation into the single gate | #71 | S | #143 |
+| Merge prompt sanitisation into the single gate | #71 | S | #143 closed; reuse its egress module |
 | Profile-agnosticism corrections | #158 | L | Layers 1-3 |
 
 #### Step 1 — Evidence layer · *blocked on #142, #144, #145*
@@ -864,7 +864,7 @@ Distillation cluster (#109–#114), LoRA Stages 0–1 (#45, #46, #47), onboardin
 | Distillation conversion scripts | ⚠️ **Partly fixed.** ONNX and OpenVINO are real. **Unsloth is a placeholder comment** with an unused import (`distillation.rs:419-421`), and the GGUF script probes a filename llama.cpp renamed while passing an `--outtype` value that only accepts `f32/f16/bf16/q8_0` — the advertised Q4_K_M path cannot execute | #63, #84 (both closed) |
 | Lightning AI client | ⚠️ **Transport real, target unverified.** Endpoints are self-documented as guesses and use the OpenAI path shape. The 401 is a code defect — the user-id env var is never read | #64, #85 (closed); live: **#154** |
 | Daemon as full orchestrator | ✅ **Verified** — scan, prerank, evaluate, rank, tailor, follow-ups and IMAP sync all present. But it re-evaluates every job every tick because job identity is random (**#142**) | #65, #86 (both closed) |
-| PII scrubber in the distillation export | ❌ **Claim was false.** The gate does not cover the file uploaded off-device, and detectors are US-only | #66, #87 (closed); live: **#143**, **#81** |
+| PII scrubber in the distillation export | ✅ **Containment fixed.** #143 closed the unchecked upload and flagged-copy defects; detector breadth remains deliberately scoped work | #66, #87, #143 (closed); live: **#81** |
 | Compute Broker — explicit `allow_paid` semantics, quota observation | Fixed | — |
 | Board-health canary — scheduled detection of scraper drift | Fixed | #68 (CI workflow) |
 | OpenSSL dependency — still present via **three** paths, not just `imap` | Open | **#67** (#88 closed as duplicate) |
@@ -911,7 +911,7 @@ Distillation cluster (#109–#114), LoRA Stages 0–1 (#45, #46, #47), onboardin
 | **Community trust erosion (privacy)** | Low | High | Local-first by default. Zero telemetry. MIT-licensed and open source. |
 | **Binary size growth over time** | Low | Low | LTO + strip in release profile. Currently 10.96 MB (measured 2026-07-29). |
 | **Competitor closes gap on zero-token scanning** | Medium | Medium | Autonomous ATS detector (issue #116) is the durable moat — makes the directory self-maintaining. |
-| **PII leakage through shared adapters** | Low | Critical | PII scrubber implemented. Gate validates final output. Accept only safe formats (GGUF/Safetensors). |
+| **PII leakage through shared adapters** | Low | Critical | Exact-byte upload containment fixed (#143 closed); finish #81 detector fixtures before enabling sharing. Accept only safe formats (GGUF/Safetensors). |
 | **Low-spec hardware claim false** | Medium | High | Issue **#73** tracks validation (#5/#57 closed as duplicates). Must test on real 4 GB CPU-only machine before declaring it proven. |
 | **Onboarding friction kills adoption** | Medium | High | Provider onboarding wizard (issue #51) is top priority. Must be trivial for first-time users. |
 
@@ -945,7 +945,7 @@ Everything in Step 0 is **unblocked**. Layer work is blocked until Step 0 lands,
 
 Step 0 — Foundation repair  [MILESTONE, all unblocked]
 ├── #142  Canonical content-addressed job IDs           P0, M
-├── #143  PII gate at single pre-upload choke point     P0, M
+├── #143  PII gate at single pre-upload choke point     closed — fixed
 ├── #144  Remove fabricated data                        S
 ├── #145  Stop swallowing scraper errors                S
 ├── #146  Replace real-person UAT fixture               S, good first issue
