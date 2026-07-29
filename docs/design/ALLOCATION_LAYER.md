@@ -26,10 +26,11 @@ Three claims an earlier draft made for the solver, and what is actually true:
 **So why keep the flow formulation?** Because the constraint set is not going to stay a matroid:
 
 - **#167's effort weighting** makes budget consumption heterogeneous, which breaks the matroid immediately.
-- **Posting liveness** (#177) and multi-period scheduling both add structure greedy cannot express.
-- The flow model is the natural home for those, and swapping it in later means rewriting the layer.
+- ~~Posting liveness (#177) and multi-period scheduling add structure greedy cannot express.~~ **This was also wrong.** Liveness *removes* postings from the ground set, and a restriction of a matroid is still a matroid. Unit-time jobs with deadlines and per-slot capacity form a scheduling matroid. Greedy stays optimal for both.
 
-That is a defensible reason to build it. *"Greedy is provably suboptimal"* was not, and should not be repeated. **If effort weighting is descoped, greedy is the correct implementation and this layer should be simplified accordingly.**
+**So exactly one justification survives: effort weighting.** If #167 is descoped, there is no remaining reason to build a flow solver.
+
+That single reason is genuine — a knapsack constraint is not a matroid, and retrofitting it onto a sort means rewriting the layer. *"Greedy is provably suboptimal"* was not, and should not be repeated. **If effort weighting is descoped, greedy is the correct implementation and this layer should be simplified accordingly.**
 
 ## Every parameter is derived or user-set. None is a constant.
 
@@ -52,7 +53,9 @@ The literature's tailoring-depth advantage is a *rate*, not a strategy. Expected
 
 ⚠️ **These two rows do not currently state different objectives, and the claim below is wrong.** "Maximise P(offer)" on a slate *is* `P(≥1 offer)` — an offer from any member is an offer. And switching from `E[#callbacks]` to `P(≥1)` is a change of **cost function** (`1−p` → `log(1−p)`), not of capacity and floor — with the added problem that `log(1−p)` is negative and the construction forbids negative costs.
 
-What the solver genuinely handles with capacity and floor alone is **the same objective at different scales**: a larger budget and a lower `P_min` for the throughput regime. That is still a real and useful distinction, and it is what the tool must not moralise about. Whether `P(≥1 offer)` is worth supporting as a separate objective is **open**, and would require reworking the cost sign convention. **The tool must not moralise about which regime the user is in.** Someone who needs income in three weeks is not doing it wrong; they have a different objective function, and telling them to make "one good move" would be advice masquerading as optimisation.
+What the solver genuinely handles with capacity and floor alone is **the same objective at different scales**: a larger budget and a lower `P_min` for the throughput regime. That is still a real and useful distinction, and it is what the tool must not moralise about. Whether `P(≥1 offer)` is worth supporting as a separate objective is **open**, and would require reworking the cost sign convention.
+
+**The tool must not moralise about which regime the user is in.** Someone who needs income in three weeks is not doing it wrong; they have a different objective function, and telling them to make "one good move" would be advice masquerading as optimisation.
 
 ### Diversification cap — derived from adjacency; *no* diversification is `cap = B`
 
