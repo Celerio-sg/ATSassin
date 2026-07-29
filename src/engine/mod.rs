@@ -1,5 +1,7 @@
+pub mod allocation;
 pub mod ats_detector;
 pub mod benchmark;
+pub mod calibration;
 pub mod compute_broker;
 pub mod cost;
 pub mod daemon;

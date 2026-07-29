@@ -25,6 +25,9 @@ Submission latency is blocked on the Step 0 `posted_at` fix — with fabricated 
 
 ## Model
 
+> **Executable reference: `src/engine/calibration.rs`.** The conjugate update, the shrinkage identity, the `prior_dominated` threshold and the equal-tailed interval are all implemented and tested there. `interval_level_of` computes the true credibility level of any stated interval — which is how the two wrong examples in this document were found after surviving several reviews.
+
+
 > **Terminology correction (2026-07-29).** Earlier drafts, and several issue titles, call this *"hierarchical empirical-Bayes"*. **Both words were wrong** and a statistically literate contributor would have implemented the wrong thing.
 >
 > - **Empirical Bayes** estimates the prior hyperparameters *from the observed data*, usually by pooling across many units. Here they come from published literature and are fixed. That is **Bayesian inference with an informative prior** — a different method.
@@ -72,9 +75,13 @@ Equal-tailed rather than highest-density: for small `k` the posterior is strongl
 The model reports that interval, and the CLI/TUI must render it — never a bare point estimate.
 
 ```
-Callback rate (deeply tailored, <7d):  4% – 19%   (n=12, prior-dominated)
-Callback rate (deeply tailored, <7d):  9% – 13%   (n=140, personal)
+Callback rate (deeply tailored, <7d):  3.2% – 20.2%   (n=12,  prior-dominated)
+Callback rate (deeply tailored, <7d):  7.6% – 15.8%   (n=140, personal)
 ```
+
+> **These figures are computed, not hand-written**, by `engine::calibration` at `p̄ = 0.115`, `α+β = 20`. An earlier draft printed `4%–19%` and `9%–13%` and labelled both "equal-tailed 90%". They were actually **84%** and **58%** intervals — wrong, wrong by different amounts, and undetectable by reading. `printed_examples_match_their_claimed_level` is now the regression test; **any interval added to these docs must pass it before it is printed.**
+>
+> Note what the honest numbers show: at n=140 the interval is still **8.2 points wide**, not the 4 the old example implied. Reaching 4 points at this rate takes roughly **600** observations. That is a real constraint on how quickly the tool can claim to know something personal, and the previous example concealed it.
 
 This is the project's honest-failure value expressed statistically. It is also what makes the number trustworthy enough for Layer 3 to optimise against.
 

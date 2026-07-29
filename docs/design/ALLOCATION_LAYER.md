@@ -206,7 +206,13 @@ Postings past `validThrough` are excluded rather than decayed, so the lower floo
 
 **Representation.** Vector-backed with `usize` indices into a `Vec<Edge>`, not `Rc<RefCell<Node>>`. This is a coding convention rather than a scale-driven optimisation — it costs nothing, avoids fighting the borrow checker in a ~200-line solver, and is the one piece of the graph-engineering research that applies at any scale. The graph is rebuilt per solve; there is no mutation hot loop, so none of the arena/CSR/generational-index machinery is warranted ([REJ-004](../DECISIONS.md)).
 
-## Solver invariants — test these before trusting the construction
+## Solver invariants — **now executable**: `src/engine/allocation.rs`
+
+> These are no longer prose. `engine::allocation` implements the reference semantics and every invariant below is a test in that module, run by `cargo test` in CI.
+>
+> **The harness is mutation-verified.** Each of the six defect classes that actually shipped was deliberately reintroduced and confirmed to fail: the cost inversion (7 tests fail), the `p_min = 0` tie (1), the age-vs-output decay clamp (2), an unenforced family cap (3), a non-deterministic tie-break (1), and an objective maximising the product instead of the sum (2).
+>
+> **If a future edit to this document contradicts a test, the test is right and the document is wrong.**
 
 **Two flow-network errors have already shipped in this document**, both syntactically plausible and both silently inverting the model:
 
