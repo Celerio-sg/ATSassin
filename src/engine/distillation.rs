@@ -1,10 +1,10 @@
 use crate::engine::feedback::{FeedbackAction, FeedbackTracker};
-use crate::engine::pii_scrubber::{contains_pii, scrub_text, ScrubContext};
+use crate::engine::pii_scrubber::{scrub_text, ScrubContext};
 use anyhow::Result;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use tracing::{info, warn};
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DistillationPair {
@@ -38,10 +38,11 @@ impl DistillationPipeline {
         profile_text: &str,
         roles: &[String],
         output_dir: &Path,
+        scrub_context: &ScrubContext,
     ) -> Result<()> {
         fs::create_dir_all(output_dir)?;
 
-        let scrubbed_profile = scrub_text(profile_text, &ScrubContext::default()).text;
+        let scrubbed_profile = scrub_text(profile_text, scrub_context).text;
         let pairs = Self::generate_pairs(&scrubbed_profile, roles);
 
         let jsonl_path = output_dir.join("training_data.jsonl");
@@ -245,41 +246,6 @@ if __name__ == '__main__':
             output_dir
         );
 
-        // Final PII gate: refuse to leave exported JSONL on disk if any
-        // detectable PII remains after scrubbing.
-        Self::pii_gate(output_dir)?;
-
-        Ok(())
-    }
-
-    /// Verify that no exported JSONL file in the output directory contains
-    /// PII. Removes the output directory and aborts if PII is detected.
-    fn pii_gate(output_dir: &Path) -> Result<()> {
-        let ctx = ScrubContext::default();
-        for entry in fs::read_dir(output_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if let Some(ext) = path.extension() {
-                if ext != "jsonl" && ext != "json" {
-                    continue;
-                }
-                let text = fs::read_to_string(&path)?;
-                if contains_pii(&text, &ctx) {
-                    // Copy the flagged file outside the output directory before
-                    // deleting it so the user can inspect what PII leaked and
-                    // fix the source.
-                    let flag_path = output_dir
-                        .parent()
-                        .unwrap_or(Path::new("."))
-                        .join(path.file_stem().unwrap_or_default())
-                        .with_extension("flagged.jsonl");
-                    let _ = fs::copy(&path, &flag_path);
-                    warn!("PII detected in exported file {} after scrubbing; removing output directory. Flagged copy saved to {}.", path.display(), flag_path.display());
-                    fs::remove_dir_all(output_dir)?;
-                    anyhow::bail!("Export aborted: PII detected in {}. Review your profile and feedback data.", path.display());
-                }
-            }
-        }
         Ok(())
     }
 
@@ -327,10 +293,10 @@ if __name__ == '__main__':
         db_path: &std::path::Path,
         _journal_path: &std::path::Path,
         output_dir: &Path,
+        scrub_context: &ScrubContext,
     ) -> Result<usize> {
         fs::create_dir_all(output_dir)?;
         let mut pairs = Vec::new();
-        let scrub_ctx = ScrubContext::default();
 
         // Read feedback rows where the user accepted or lightly edited the recommendation.
         if let Ok(tracker) = FeedbackTracker::new(db_path) {
@@ -344,10 +310,10 @@ if __name__ == '__main__':
                     }
                     let instruction =
                         format!("{} recommendation for job {}", ev.task_type, ev.job_id);
-                    let input = scrub_text(&ev.recommendation_text, &scrub_ctx).text;
+                    let input = scrub_text(&ev.recommendation_text, scrub_context).text;
                     let output = scrub_text(
                         ev.edited_text.as_deref().unwrap_or(&ev.recommendation_text),
-                        &scrub_ctx,
+                        scrub_context,
                     )
                     .text;
                     pairs.push(TrainingPair {

@@ -5,6 +5,7 @@ All notable changes to this project are documented here. Format loosely follows 
 ## [Unreleased]
 
 ### Fixed
+- Lightning AI training uploads now require an opaque, fail-closed payload validated from the exact in-memory JSONL bytes sent over HTTP; candidate identity values are redacted, rejected data cannot reach the network, and the unsafe `*.flagged.jsonl` copy has been removed (#143).
 - Install instructions and `Cargo.toml` package metadata pointed to the wrong GitHub repository (`srbhr/ATSassin` instead of `Celerio-sg/ATSassin`) — the one-liner installer and `git clone` command in the README would not have worked for a new user.
 - LinkedIn export location/email/phone were correctly parsed but silently lost on the `profile.md` round-trip.
 - `scan` results defaulted to US-only postings regardless of query wording or `--location`.

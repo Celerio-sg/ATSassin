@@ -7,6 +7,7 @@ pub mod cost;
 pub mod daemon;
 pub mod deep_research;
 pub mod distillation;
+pub mod egress;
 pub mod feedback;
 pub mod hardware;
 pub mod landscore;

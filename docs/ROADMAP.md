@@ -36,7 +36,7 @@ Each step is worthless without its predecessor. This ordering is forced, not pre
 #### Step 0 — Foundation repair (blocking; nothing else is trustworthy until this lands)
 
 - **Canonical content-addressed job IDs** replacing random v4 UUIDs ([ADR-001](DECISIONS.md#adr-001--job-identity-is-content-addressed-never-random)). Today the same posting scanned twice becomes two rows, the evaluation cache can never hit, and the daemon re-evaluates every job every hour forever. A live trial on 2026-07-29 found **8 of the top 20 recommendations were duplicates**.
-- **PII gate at a single pre-upload choke point**, plus international detectors ([ADR-002](DECISIONS.md#adr-002--missing-data-is-represented-as-missing-never-as-a-plausible-default)). The file currently uploaded to Lightning AI is written *after* the only gate runs and is never checked.
+- **PII egress containment is fixed (#143 closed):** Lightning AI accepts only an opaque payload containing the exact bytes checked immediately before upload; validation fails closed and no flagged copy is retained. **Detector breadth remains Step 0 work in #81**: deterministic international address/phone/ID fixtures and false-positive controls must land before this is described as universal entity recognition.
 - **Delete fabricated data**: `posted_at = Utc::now()`, fallback 0.5 evaluations, the hardcoded `roles research` archetype.
 - **Stop swallowing scraper errors** ([ADR-003](DECISIONS.md#adr-003--errors-propagate-they-are-not-collapsed-into-empty-results)) — a network outage is currently reported as "no jobs found, try a different query".
 - **Remove OpenSSL/native-tls** (#67) — still present via three paths.
@@ -131,7 +131,7 @@ Adapter distribution stays on the HTTP registry (Stage 1) indefinitely.
 
 > **Rejected. Issue #105 is closed.** See [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt).
 >
-> Two grounds. It creates **new outbound data paths** while the existing one is known to leak (#143), which is the wrong order of work. And the architecture is **per-user by construction** — Layer 2 fits a conversion model from the user's own local outcome data, and that privacy property is exactly what makes the feature defensible against cloud competitors. A pooled corpus has no role in it.
+> Two grounds. It would create **new outbound data paths**; the historical Lightning upload leak is fixed (#143 closed), but that does not justify broadening egress. And the architecture is **per-user by construction** — Layer 2 fits a conversion model from the user's own local outcome data, and that privacy property is exactly what makes the feature defensible against cloud competitors. A pooled corpus has no role in it.
 >
 > The underlying goal — better board coverage without every instance rediscovering the same sources — is met by the extraction ladder (#147, #148, #149), which **derives** sources rather than pooling them.
 

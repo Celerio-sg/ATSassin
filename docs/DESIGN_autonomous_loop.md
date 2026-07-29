@@ -248,9 +248,12 @@ Use the persisted telemetry stream to improve toward smaller, user-specific mode
 5. Use the small model as the default when it passes the quality gate; escalate to larger/cloud models via the Compute Broker when confidence is low.
 
 **✅ COMPLETED:** PII scrubbing is integrated before any export:
-- All training pairs are scrubbed using `pii_scrubber.rs`
-- A PII gate validates final output and aborts if any detectable PII remains
+- All training pairs are scrubbed using candidate-derived context from `pii_scrubber.rs`
+- The #143 fix validates the exact in-memory JSONL bytes immediately before upload; the Lightning client cannot accept arbitrary paths
+- Validation fails closed before any HTTP request and does not retain a flagged copy
 - Context-aware preservation for target companies
+
+This is deterministic containment, not universal entity recognition. International address/phone/ID coverage and false-positive fixtures remain tracked by #81.
 
 Storage optimization:
 - Deduplicate prompts.

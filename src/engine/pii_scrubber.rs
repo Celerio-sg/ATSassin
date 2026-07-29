@@ -8,6 +8,7 @@
 //! (CRITICAL_CHAIN_PLAN.md issue #46). Sharing a distilled model that
 //! memorizes PII would be project-killing.
 
+use crate::models::profile::UserProfile;
 use regex::Regex;
 use std::collections::HashSet;
 
@@ -17,7 +18,8 @@ lazy_static::lazy_static! {
         r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
     ).expect("email regex must compile");
 
-    // Phone number patterns (international and US formats)
+    // Phone number patterns (US formats; expanded international coverage is
+    // tracked separately in issue #81).
     static ref PHONE_RE: Regex = Regex::new(
         r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"
     ).expect("phone regex must compile");
@@ -31,6 +33,10 @@ lazy_static::lazy_static! {
     static ref ADDRESS_RE: Regex = Regex::new(
         r"\d+\s+[A-Z][a-zA-Z0-9\s,]+?(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Place|Pl)"
     ).expect("address regex must compile");
+
+    static ref EXPLICIT_NAME_RE: Regex = Regex::new(
+        r"(?im)^\s*name\s*[:\-]\s*(\S.*?)\s*$"
+    ).expect("explicit name regex must compile");
 }
 
 /// PII scrubbing result with statistics
@@ -46,15 +52,77 @@ pub struct ScrubResult {
     pub companies_removed: usize,
     /// Number of addresses removed
     pub addresses_removed: usize,
+    /// Number of candidate identity terms removed
+    pub identity_terms_removed: usize,
 }
 
-/// Additional context to preserve certain entities
+/// Identity context used to make free-text redaction candidate-specific.
 #[derive(Debug, Clone, Default)]
 pub struct ScrubContext {
     /// Company names that should NOT be scrubbed (e.g., target companies)
     pub preserve_companies: HashSet<String>,
-    /// Names that should NOT be scrubbed (e.g., common first names in context)
-    pub preserve_names: HashSet<String>,
+    identity_terms: HashSet<String>,
+    identity_anchor_present: bool,
+}
+
+impl ScrubContext {
+    pub fn from_profile(profile: &UserProfile) -> Self {
+        let mut context = Self::default();
+        if let Some(explicit_name) = EXPLICIT_NAME_RE
+            .captures(&profile.raw_text)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str().trim())
+            .filter(|value| value.eq_ignore_ascii_case(profile.name.trim()))
+        {
+            context.identity_anchor_present = context.insert_identity_term(explicit_name);
+        }
+        for value in [
+            profile.email.as_deref(),
+            profile.phone.as_deref(),
+            profile.location.as_deref(),
+            profile.linkedin_url.as_deref(),
+            profile.portfolio_url.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            context.insert_identity_term(value);
+        }
+        for experience in &profile.experience {
+            context.insert_identity_term(&experience.company);
+        }
+        for education in &profile.education {
+            context.insert_identity_term(&education.institution);
+        }
+        context
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_identity_term(&mut self, value: impl AsRef<str>) {
+        if self.insert_identity_term(value) {
+            self.identity_anchor_present = true;
+        }
+    }
+
+    fn insert_identity_term(&mut self, value: impl AsRef<str>) -> bool {
+        let value = value.as_ref().trim();
+        let lower = value.to_lowercase();
+        if value.chars().count() >= 3
+            && !matches!(
+                lower.as_str(),
+                "unknown" | "not provided" | "n/a" | "none" | "remote"
+            )
+        {
+            self.identity_terms.insert(value.to_string());
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn has_identity_context(&self) -> bool {
+        self.identity_anchor_present
+    }
 }
 
 /// Scrub PII from text
@@ -64,6 +132,18 @@ pub fn scrub_text(text: &str, context: &ScrubContext) -> ScrubResult {
     let mut phones_removed = 0;
     let mut companies_removed = 0;
     let mut addresses_removed = 0;
+    let mut identity_terms_removed = 0;
+
+    let mut identity_terms: Vec<_> = context.identity_terms.iter().collect();
+    identity_terms.sort_by_key(|term| std::cmp::Reverse(term.chars().count()));
+    for term in identity_terms {
+        let pattern = identity_pattern(term);
+        let count = pattern.find_iter(&result).count();
+        if count > 0 {
+            result = pattern.replace_all(&result, "[IDENTITY]").into_owned();
+            identity_terms_removed += count;
+        }
+    }
 
     // Scrub emails
     let emails: Vec<String> = EMAIL_RE
@@ -115,11 +195,18 @@ pub fn scrub_text(text: &str, context: &ScrubContext) -> ScrubResult {
         phones_removed,
         companies_removed,
         addresses_removed,
+        identity_terms_removed,
     }
 }
 
 /// Check if text contains any PII patterns
 pub fn contains_pii(text: &str, context: &ScrubContext) -> bool {
+    for term in &context.identity_terms {
+        let pattern = identity_pattern(term);
+        if pattern.is_match(text) {
+            return true;
+        }
+    }
     if EMAIL_RE.is_match(text) {
         for email in EMAIL_RE.find_iter(text) {
             if !context.preserve_companies.contains(email.as_str()) {
@@ -141,6 +228,24 @@ pub fn contains_pii(text: &str, context: &ScrubContext) -> bool {
         return true;
     }
     false
+}
+
+fn identity_pattern(term: &str) -> Regex {
+    let leading_boundary = term
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_alphanumeric() || character == '_');
+    let trailing_boundary = term
+        .chars()
+        .next_back()
+        .is_some_and(|character| character.is_alphanumeric() || character == '_');
+    Regex::new(&format!(
+        "(?iu){}{}{}",
+        if leading_boundary { r"\b" } else { "" },
+        regex::escape(term),
+        if trailing_boundary { r"\b" } else { "" }
+    ))
+    .expect("escaped identity term must compile")
 }
 
 #[cfg(test)]
@@ -216,7 +321,8 @@ mod tests {
 
     #[test]
     fn complex_profile_scrubbing() {
-        let context = ScrubContext::default();
+        let mut context = ScrubContext::default();
+        context.add_identity_term("John Doe");
         let profile = r#"
         John Doe
         Email: john.doe@example.com
@@ -229,7 +335,58 @@ mod tests {
         assert!(result.phones_removed > 0);
         assert!(result.companies_removed > 0);
         assert!(result.addresses_removed > 0);
+        assert!(result.identity_terms_removed > 0);
         assert!(!contains_pii(&result.text, &context));
+    }
+
+    #[test]
+    fn scrub_unicode_identity_terms_case_insensitively() {
+        let mut context = ScrubContext::default();
+        context.add_identity_term("Renée Chén");
+
+        let result = scrub_text("Candidate: RENÉE CHÉN", &context);
+
+        assert_eq!(result.text, "Candidate: [IDENTITY]");
+        assert_eq!(result.identity_terms_removed, 1);
+        assert!(!contains_pii(&result.text, &context));
+    }
+
+    #[test]
+    fn identity_terms_do_not_match_inside_unrelated_words() {
+        let mut context = ScrubContext::default();
+        context.add_identity_term("Ann");
+
+        let result = scrub_text("Planning applications", &context);
+
+        assert_eq!(result.text, "Planning applications");
+        assert_eq!(result.identity_terms_removed, 0);
+    }
+
+    #[test]
+    fn profile_context_redacts_candidate_derived_values() -> anyhow::Result<()> {
+        let profile = crate::engine::profile_parser::ProfileParser::profile_from_text(
+            "Name: Renée Chén\nLocation: Singapore",
+        )?;
+        let context = ScrubContext::from_profile(&profile);
+
+        let result = scrub_text("RENÉE CHÉN is based in singapore", &context);
+
+        assert!(!result.text.contains("RENÉE CHÉN"));
+        assert!(!result.text.contains("singapore"));
+        assert!(context.has_identity_context());
+        Ok(())
+    }
+
+    #[test]
+    fn generic_markdown_heading_is_not_an_identity_anchor() -> anyhow::Result<()> {
+        let profile = crate::engine::profile_parser::ProfileParser::profile_from_text(
+            "# Resume\nJane Example\nLocation: Singapore",
+        )?;
+        let context = ScrubContext::from_profile(&profile);
+
+        assert_eq!(profile.name, "# Resume");
+        assert!(!context.has_identity_context());
+        Ok(())
     }
 
     #[test]

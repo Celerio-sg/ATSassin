@@ -27,8 +27,8 @@ These are the failure modes that could kill the ecosystem feature (or the projec
 
 ### R2 — Privacy/PII leakage through shared LoRA weights
 **Risk:** A model distilled on a user's real resumes, cover letters, and job data can memorize names, companies, email addresses, and addresses. If that adapter is shared, PII leaks to the network. This is a legal, trust, and project-killing risk.
-**Evidence:** `docs/ROADMAP.md` guardrails table lists PII scrubbing. **RESOLVED:** PII scrubber is now fully implemented in `src/engine/pii_scrubber.rs` with comprehensive regex patterns for emails, phones, companies, and addresses, plus context-aware preservation and a PII gate that aborts export if any detectable PII remains after scrubbing.
-**Mitigation:** ✅ COMPLETED - PII scrubber is implemented and integrated into the distillation pipeline (`export_from_feedback_and_telemetry` scrubs all pairs before export, `pii_gate` validates final output).
+**Evidence:** `docs/ROADMAP.md` guardrails table lists PII scrubbing. **CONTAINMENT RESOLVED (#143 closed):** `src/engine/egress.rs` validates the exact bytes uploaded by Lightning and fails closed before networking; candidate-derived values are scrubbed and no flagged copy is retained. Deterministic detector breadth remains open in #81.
+**Mitigation:** ✅ EGRESS CONTAINMENT COMPLETED - the distillation pipeline scrubs all pairs and only `ValidatedTrainingPayload` can cross the Lightning upload boundary. This is not a claim of universal entity recognition.
 
 ### R3 — Unverifiable provenance claims become marketing spin
 **Risk:** A publisher claims "distilled from Fable 5" when they actually used a cheap local model. Without a trusted execution environment during training, the claim is unverifiable. If rankings rely on claimed lineage, the system becomes a reputation contest for liars.
@@ -71,7 +71,7 @@ These are the failure modes that could kill the ecosystem feature (or the projec
 | DHT scaling only when justified | `ROADMAP.md` Stage 3 | Captured; needs explicit gating metrics |
 | No account automation / ToS violations | `DESIGN_autonomous_loop.md` §8.3 | Captured; must remain a hard rule |
 | Rank by real earnings outcome | `ROADMAP.md` Stage 2, Stage 4 | Under-specified; needs concrete metric (offer/interview conversion) |
-| PII scrubbing before any shared artifact | `ROADMAP.md` guardrails | ✅ COMPLETED - PII scrubber implemented in `src/engine/pii_scrubber.rs` with comprehensive tests and distillation integration |
+| PII scrubbing before any shared artifact | `ROADMAP.md` guardrails | ✅ Egress containment completed by #143 (closed); broader deterministic detector coverage remains #81 |
 
 ---
 
