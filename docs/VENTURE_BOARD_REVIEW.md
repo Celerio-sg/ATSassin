@@ -40,7 +40,7 @@ None of them help a professional answer the question: *"Given what I actually kn
 
 ### The Solution
 
-ATSassin is a single 8.14 MB Rust binary that:
+ATSassin is a single 10.96 MB Rust binary that:
 
 1. **Infers** 5-10 suitable role archetypes from a single input (resume, LinkedIn export, or portfolio URL)
 2. **Scans** 11+ job surfaces concurrently (LinkedIn, Seek, Greenhouse, Lever, Ashby, HN, Reddit, RemoteOK, Wellfound, WeWorkRemotely, Indeed, social aggregators)
@@ -65,9 +65,9 @@ The need is not for "better ATS keyword optimization." It is for **continuous ea
 
 | Dimension | Current state |
 |-----------|--------------|
-| Binary size | 8.14 MB (single static binary, no runtime) |
+| Binary size | 10.96 MB (measured on a clean `--release` build, 2026-07-29) |
 | Hardware floor | 4 GB RAM, CPU-only (target — see open issue #5) |
-| Scraping surfaces | 11+ (LinkedIn, Seek, Greenhouse × ~36 companies, HN, Reddit, RemoteOK, Wellfound, WeWorkRemotely, Indeed, Ashby, Lever) |
+| Scraping surfaces | 11+ (LinkedIn, Seek, Greenhouse × 44 companies, HN, Reddit, RemoteOK, Wellfound, WeWorkRemotely, Indeed, Ashby, Lever) |
 | Evaluation rigor | 6-dimension rubric (role match, north-star alignment, compensation, cultural signals, red flags, global fit) |
 | TUI capability | Full terminal dashboard: infer, scan, evaluate, tailor, pipeline tracking |
 | Verified personas | 5 distinct profiles tested end-to-end with real, non-fabricated LLM output |
@@ -123,7 +123,7 @@ This persona proves the workflow end-to-end. The architecture generalizes from t
 
 ### The Founding Trial
 
-A live trial against the founder's own profile (Simon Brender — senior sales/BD/PM leader with APAC experience) ran the full workflow end-to-end: profile init → role inference → job scanning across 11 surfaces → LLM evaluation → tailoring → apply kit generation. The tool uncovered 4 contract roles (Airtable, PolyAI, PHARMExcel, Later) and produced 3 strong matches with scores ≥0.70, generating tailored resumes and cover letters for each.
+A live trial against the founder's own profile (a senior sales/BD/PM leader with APAC experience) ran the full workflow end-to-end: profile init → role inference → job scanning across 11 surfaces → LLM evaluation → tailoring → apply kit generation. The tool uncovered 4 contract roles (Airtable, PolyAI, PHARMExcel, Later) and produced 3 strong matches with scores ≥0.70, generating tailored resumes and cover letters for each.
 
 The trial revealed two things that shaped the design:
 
@@ -179,11 +179,23 @@ On 2026-07-25, 7 competitor tools were actually installed and run (not just read
 | `balanced` | `qwen3.5:9b` | 8192 | yes | 8 GB |
 | `full` | `qwen3.5:9b:q6` | 32768 | no | 16 GB |
 
+### Critical Defects Found in Adversarial Review (2026-07-29)
+
+A line-by-line adversarial review ([INFLECTION_ARCHITECTURE.md](INFLECTION_ARCHITECTURE.md)) found three P0 defects. All are scheduled as Step 0 of the critical chain, and **the architecture above should be read as aspirational until they are fixed**.
+
+1. **The PII gate does not cover the file that leaves the machine.** In `cli.rs`, the gate runs at line 1429, `training_pairs.jsonl` is written at 1435, and that file is uploaded to Lightning AI at 1457 — the only file transmitted off-device is the one never checked. The gate additionally copies flagged PII files *outside* the directory it then deletes, and its detectors are US-only (a Singapore `+65` number matches nothing). This contradicts the claim at §6.5 and §9 that the gate "validates final output."
+
+2. **Job identity is random.** All three scan paths assign v4 UUIDs, and the schema has no uniqueness constraint on `url`. The same posting scanned twice becomes two rows; the evaluation cache can never hit; the daemon re-evaluates every job every hour indefinitely at full LLM cost. A live trial on 2026-07-29 found **8 of the top 20 recommendations were duplicates of other entries**. This made continuous market-watch (#121) unshippable as designed.
+
+3. **Real-person PII in the tree.** A real individual's employment history is tracked as the `tests/uat/scenario_1_*` fixture — including in the directory name — and a second CV export sat unignored at the repo root. The root file is now gitignored; the tracked fixture must be replaced with a synthetic persona (#146). **Standing rule: no contributor's name, employers, compensation, or contact details belong in this repo or its issue tracker.** Test personas are described by shape only.
+
+Additionally, several honest-failure violations were found and are scheduled for removal: fabricated `posted_at` values that systematically promoted the sources that fabricate dates over those that report them truthfully; synthesised 0.5 evaluations persisted as real on LLM parse failure; and error-swallowing that renders a network outage as "no jobs returned, try a different query."
+
 ### Known Verification Gaps
 
 1. **Low-spec hardware claim unvalidated.** The documented 4 GB CPU-only target has not been tested on actual low-spec hardware (issue #5).
 2. **Lightning AI provider returns 401 Unauthorized.** Unconfirmed whether bug or credential issue (issue #6).
-3. **Company directory hand-maintained.** Static ~35-company list that will go stale; the permanent fix is an autonomous ATS detector (issue #1, design issue #116).
+3. **Company directory hand-maintained.** Static 44-company list that will go stale; the permanent fix is an autonomous ATS detector (issue #1, design issue #116).
 4. **--preset does not differentiate hosted providers.** On cloud providers, `--preset` only changes timeout/retry values, not model choice (issue #3).
 
 ---
@@ -257,7 +269,7 @@ Every architectural decision follows these rules, applied consistently:
 ```
 src/
 ├── main.rs                    # Entry point
-├── cli.rs                     # CLI command definitions (~50 commands)
+├── cli.rs                     # CLI command definitions (45 subcommands)
 ├── config.rs                  # Configuration + .env management
 ├── lib.rs                     # Library root
 ├── models/
@@ -370,7 +382,7 @@ This section covers every design dimension discussed and their current status. E
 
 **Current state:**
 - 11+ scraping surfaces integrated
-- Concurrent company sweep (36 companies in ~9 seconds)
+- Concurrent company sweep (44 companies in ~16-26 seconds, measured 2026-07-29)
 - Social platform scraping (HN, Reddit, RemoteOK, Wellfound, etc.)
 - Per-board rate limiting with honest empty results on failure
 
@@ -389,7 +401,7 @@ Each source is one file in `src/sources/`, registered in a `SourceManager` that 
 
 **Design direction — Autonomous company ATS detector (issue #116):**
 
-Replace the hand-maintained ~35-company list with runtime detection: fetch a company's public careers page URL, pattern-match against Greenhouse/Lever/Ashby/Workday embed shapes, and persist the detected provider. This turns "add more companies" from a permanent chore into a one-time detector.
+Replace the hand-maintained 44-company list with runtime detection: fetch a company's public careers page URL, pattern-match against Greenhouse/Lever/Ashby/Workday embed shapes, and persist the detected provider. This turns "add more companies" from a permanent chore into a one-time detector.
 
 **Issue map:** #130 (source architecture), #116 (ATS detector)
 
@@ -660,8 +672,8 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 | Element | Approach |
 |---------|---------|
 | **License** | MIT — permissive, corporate-friendly, no restrictions on use or fork |
-| **Code ownership** | `CODEOWNERS` file with area leads for major tracks (PII, career coach, crowdsourcing, AI exposure, autonomous loop) |
-| **Contribution model** | Issues with good-first-issue labels, detailed acceptance criteria, PRs reviewed by area leads |
+| **Code ownership** | `CODEOWNERS` exists but currently resolves every rule to the single maintainer; three of five area entries are commented out and two reference files that do not exist. **There are no area leads yet.** `CONTRIBUTING.md` documents the path to becoming one. |
+| **Contribution model** | Issues with good-first-issue labels and detailed acceptance criteria; PRs reviewed by the maintainer until area leads emerge |
 | **Decision making** | Technical decisions by area lead + maintainer consensus. Strategic decisions by project founder with community input. |
 | **Funding** | GitHub Sponsors (4 tiers from $5/mo to $500/mo). No corporate funding or VC dependency during early stage. |
 | **Community** | Discord for real-time chat, GitHub Discussions for ideas, Issues for tracked work. |
@@ -679,6 +691,10 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 ## 8. Milestone Roadmap
 
 ### Critical Chain (shortest path to highest value)
+
+> **Superseded as of 2026-07-29.** Phases 0–5 below describe work that has largely shipped and remain accurate as history. The **current** build order is the four-step critical chain in [ROADMAP.md](ROADMAP.md#the-critical-chain): Step 0 foundation repair → Step 1 evidence layer → Step 2 calibration layer → Step 3 allocation layer. Rationale in [INFLECTION_ARCHITECTURE.md](INFLECTION_ARCHITECTURE.md); settled and rejected decisions in [DECISIONS.md](DECISIONS.md); per-layer specs in [design/](design/); verification approach in [TEST_STRATEGY.md](TEST_STRATEGY.md).
+>
+> The strategic work-item table further below is likewise reordered by that chain — several items in it are subsumed or reframed, and three (#49, #50, #105) are now rejected. The tracker is the authority on per-issue status.
 
 Each phase is independently shippable. Phases 0-2 need no daemon, no new hard dependencies, and no cloud accounts beyond what the user already configures.
 
@@ -808,7 +824,7 @@ Each is captured as a GitHub issue with acceptance criteria:
 | **Scraper API changes breaking scan sources** | Medium | Medium | Every scraper degrades to honest empty result on failure (verified in UAT). Board-health canary detects drift. |
 | **Compensation-estimate inaccuracy** | Medium | Medium | Seniority-aware sanity clamp in place. Real market-data source is the durable fix (issue #119). |
 | **Community trust erosion (privacy)** | Low | High | Local-first by default. Zero telemetry. MIT-licensed and open source. |
-| **Binary size growth over time** | Low | Low | LTO + strip in release profile. Currently ~9.5 MB. |
+| **Binary size growth over time** | Low | Low | LTO + strip in release profile. Currently 10.96 MB (measured 2026-07-29). |
 | **Competitor closes gap on zero-token scanning** | Medium | Medium | Autonomous ATS detector (issue #116) is the durable moat — makes the directory self-maintaining. |
 | **PII leakage through shared adapters** | Low | Critical | PII scrubber implemented. Gate validates final output. Accept only safe formats (GGUF/Safetensors). |
 | **Low-spec hardware claim false** | Medium | High | Issue #5 tracks validation. Must test on real 4 GB CPU-only machine before declaring it proven. |

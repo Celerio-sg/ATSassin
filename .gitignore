@@ -58,3 +58,18 @@ session-ses_*.md
 # Never commit this. If an example LinkedIn-export fixture is needed for
 # docs/tests, it must be synthetic/anonymized data checked in deliberately.
 /assets/examples/
+
+# Real CV/resume exports kept at the project root as local scan/parse inputs.
+# These are a real person's employment history. Root-anchored so the synthetic
+# `tests/uat/*/profile.md` fixtures are unaffected. A bare `git add -A` was
+# previously enough to publish these to a public repo.
+/tail-*.md
+/*-resume.md
+/*-cv.md
+/cv.md
+/resume.md
+
+# Local database of an unrelated desktop application that writes inside this
+# working tree. Not an ATSassin artifact; the directory itself needs ignoring,
+# not just the *.db files the rules above already catch.
+/.freebuff/
