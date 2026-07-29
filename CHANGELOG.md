@@ -5,6 +5,7 @@ All notable changes to this project are documented here. Format loosely follows 
 ## [Unreleased]
 
 ### Fixed
+- The identity-bearing Scenario 1 UAT profile and current-tree references were replaced with a wholly synthetic senior APAC GTM persona of equivalent parser and workflow test shape; historical reports retain their observations with anonymisation annotations (#146).
 - Deterministic PII coverage now includes representative SG, UK, India, EU, and US phone/address shapes, Unicode profile identity, strong or labelled national IDs/passports/DOBs, and standalone social handles, with false-positive controls; this is explicitly not universal NER (#81).
 - Lightning AI training uploads now require an opaque, fail-closed payload validated from the exact in-memory JSONL bytes sent over HTTP; candidate identity values are redacted, rejected data cannot reach the network, and the unsafe `*.flagged.jsonl` copy has been removed (#143).
 - Install instructions and `Cargo.toml` package metadata pointed to the wrong GitHub repository (`srbhr/ATSassin` instead of `Celerio-sg/ATSassin`) — the one-liner installer and `git clone` command in the README would not have worked for a new user.

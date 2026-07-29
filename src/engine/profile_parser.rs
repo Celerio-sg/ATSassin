@@ -729,7 +729,7 @@ mod tests {
             exp,
             "Profile.csv",
             "First Name,Last Name,Headline,Summary,Geo Location\n\
-             Simon,Brender,APAC GM at X,15+ yrs SaaS leadership.,Singapore\n",
+             Maya,Kestrel,APAC GM at X,15+ yrs SaaS leadership.,Singapore\n",
         );
         write_csv(exp, "Skills.csv", "OpenAI Products\n");
         write_csv(
@@ -744,7 +744,7 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(profile.name, "Simon Brender");
+        assert_eq!(profile.name, "Maya Kestrel");
         assert_eq!(profile.location.as_deref(), Some("Singapore"));
         assert!(profile.summary.as_deref().unwrap_or("").contains("SaaS"));
         assert_eq!(profile.skills.len(), 1);
@@ -755,7 +755,7 @@ mod tests {
     fn parse_linkedin_export_picks_confirmed_email_address_first() {
         let tmp = tempdir().unwrap();
         let exp = tmp.path();
-        write_csv(exp, "Profile.csv", "First Name,Last Name\nSimon,Brender\n");
+        write_csv(exp, "Profile.csv", "First Name,Last Name\nMaya,Kestrel\n");
         write_csv(
             exp,
             "Email Addresses.csv",
@@ -777,11 +777,11 @@ mod tests {
     fn parse_linkedin_export_falls_back_to_first_email_when_none_confirmed() {
         let tmp = tempdir().unwrap();
         let exp = tmp.path();
-        write_csv(exp, "Profile.csv", "First Name,Last Name\nSimon,Brender\n");
+        write_csv(exp, "Profile.csv", "First Name,Last Name\nMaya,Kestrel\n");
         write_csv(
             exp,
             "Email Addresses.csv",
-            "Email Address,Confirmed\nsimon.brender@celerio.sg,No\n",
+            "Email Address,Confirmed\nmaya.kestrel@example.test,No\n",
         );
 
         let profile = ProfileParser::parse(ProfileInput::LinkedInExport {
@@ -789,14 +789,14 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(profile.email.as_deref(), Some("simon.brender@celerio.sg"));
+        assert_eq!(profile.email.as_deref(), Some("maya.kestrel@example.test"));
     }
 
     #[test]
     fn parse_linkedin_export_reads_phone_numbers_csv_first_row() {
         let tmp = tempdir().unwrap();
         let exp = tmp.path();
-        write_csv(exp, "Profile.csv", "First Name,Last Name\nSimon,Brender\n");
+        write_csv(exp, "Profile.csv", "First Name,Last Name\nMaya,Kestrel\n");
         write_csv(
             exp,
             "PhoneNumbers.csv",
@@ -836,7 +836,7 @@ mod tests {
         write_csv(
             exp,
             "Profile.csv",
-            "First Name,Last Name,Headline,Summary\nSimon,Brender,H,15+ yrs\n",
+            "First Name,Last Name,Headline,Summary\nMaya,Kestrel,H,15+ yrs\n",
         );
 
         let profile = ProfileParser::parse(ProfileInput::LinkedInExport {

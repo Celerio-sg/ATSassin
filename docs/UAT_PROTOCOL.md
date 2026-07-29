@@ -31,7 +31,7 @@
 
 | # | Persona | Background | Target Role | Key Challenge |
 |---|---------|-----------|-------------|---------------|
-| 1 | **Simon Brender** | 25+ yrs tech sales/GTM/PM leadership (DataRobot VP, Protegrity GM, Grafana Interim, Celerio Founder) | Remote contract/interim GTM leadership in APAC | Senior pivot to contract/interim |
+| 1 | **Maya Kestrel (synthetic)** | 25+ yrs tech sales/GTM/PM leadership (regional VP, GM, interim director, founder) | Remote contract/interim GTM leadership in APAC | Senior pivot to contract/interim |
 | 2 | **Returning Housewife / Nomadic Freelancer** | 38yo, 8yr career gap, PA/TA/ESL background | Flexible remote VA/tutoring (20-30h/wk) funding travel in SEA/Europe | Career gap detection, non-traditional roles |
 | 3 | **Worldschooling Parent** | 42yo former marketing coordinator, full-time worldschooling 2 kids | Part-time remote content/VA/curriculum design | Unconventional work, flexible hours |
 | 4 | **Recent Graduate in Tokyo** | 24yo Japanese business graduate, 3mo internship, basic English | Entry-level tech sales/BD/international coordination | Thin resume, language barrier |

@@ -142,7 +142,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let personas = [
-        ("scenario_1_simon_brender", "Simon Brender"),
+        ("scenario_1_synthetic_apac_gtm", "Maya Kestrel"),
         ("scenario_2_returning_housewife", "Returning Housewife"),
         ("scenario_3_worldschooling_parent", "Worldschooling Parent"),
         ("scenario_4_tokyo_graduate", "Tokyo Graduate"),

@@ -191,7 +191,7 @@ A line-by-line adversarial review ([INFLECTION_ARCHITECTURE.md](INFLECTION_ARCHI
 
 2. **Job identity is random.** All three scan paths assign v4 UUIDs, and the schema has no uniqueness constraint on `url`. The same posting scanned twice becomes two rows; the evaluation cache can never hit; the daemon re-evaluates every job every hour indefinitely at full LLM cost. A live trial on 2026-07-29 found **8 of the top 20 recommendations were duplicates of other entries**. This made continuous market-watch (#121) unshippable as designed.
 
-3. **Real-person PII in the tree.** A real individual's employment history is tracked as the `tests/uat/scenario_1_*` fixture — including in the directory name — and a second CV export sat unignored at the repo root. The root file is now gitignored; the tracked fixture must be replaced with a synthetic persona (#146). **Standing rule: no contributor's name, employers, compensation, or contact details belong in this repo or its issue tracker.** Test personas are described by shape only.
+3. **Historical finding — fixed by #146 (closed): real-person PII was in the tree.** The identity-bearing Scenario 1 fixture and directory were replaced with a wholly synthetic senior APAC GTM persona of equivalent test shape. Current-tree tests, examples, and reports are anonymised, while point-in-time observations remain explicitly annotated. **Standing rule: no contributor's name, employers, compensation, or contact details belong in this repo or its issue tracker.** Test personas are described by shape only.
 
 Additionally, several honest-failure violations were found and are scheduled for removal: fabricated `posted_at` values that systematically promoted the sources that fabricate dates over those that report them truthfully; synthesised 0.5 evaluations persisted as real on LLM parse failure; and error-swallowing that renders a network outage as "no jobs returned, try a different query."
 
@@ -811,7 +811,7 @@ Milestones in GitHub mirror these four groups. Tracking epic: **#156**.
 | International PII detectors | #81 closed — fixed | S | #143 closed; containment prerequisite fixed |
 | Remove fabricated data (dates, 0.5 evals, roles research) | **#144** | S | Layers 2, 3 |
 | Stop swallowing scraper errors | **#145** | S | Layer 1 |
-| Replace real-person UAT fixture | #146 | S | — |
+| Replace real-person UAT fixture | #146 closed — fixed | S | — |
 | Compensation floor: extract, prompt, stop defaulting | #155 | M | Layer 3 |
 | Remove OpenSSL/native-tls (3 paths) | #67 | S | — |
 | Merge prompt sanitisation into the single gate | #71 | S | #143 closed; reuse its egress module |
@@ -948,7 +948,7 @@ Step 0 — Foundation repair  [MILESTONE, all unblocked]
 ├── #143  PII gate at single pre-upload choke point     closed — fixed
 ├── #144  Remove fabricated data                        S
 ├── #145  Stop swallowing scraper errors                S
-├── #146  Replace real-person UAT fixture               S, good first issue
+├── #146  Replace real-person UAT fixture               closed — fixed
 ├── #155  Compensation floor: extract/prompt/no default M
 ├── #158  Profile-agnosticism corrections               L
 ├── #81   International PII detectors                   closed — fixed

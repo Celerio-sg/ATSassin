@@ -2,7 +2,7 @@
   "timestamp": "2026-07-23T17:16:17Z",
   "baseline": [
     {
-      "command": "profile init --linkedin C:\\Users\\simon\\Repos\\ATSassin\\assets\\examples\\linkedin_test\\Profile.csv",
+      "command": "profile init --linkedin C:\\repo\\ATSassin\\assets\\examples\\linkedin_test\\Profile.csv",
       "metric": "profile_init_ms",
       "elapsed_ms": 1035,
       "returncode": 0,

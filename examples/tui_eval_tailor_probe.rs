@@ -17,7 +17,7 @@ fn main() -> anyhow::Result<()> {
     let binary = repo_root.join("target/release/atsassin.exe");
     let _ = std::fs::remove_file(repo_root.join("eval_probe.db"));
     std::fs::copy(
-        repo_root.join("tests/uat/scenario_1_simon_brender/profile.md"),
+        repo_root.join("tests/uat/scenario_1_synthetic_apac_gtm/profile.md"),
         repo_root.join("pty_probe_profile.md"),
     )?;
 
