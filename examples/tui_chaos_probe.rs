@@ -141,7 +141,7 @@ fn main() -> anyhow::Result<()> {
     let _ = std::fs::remove_file(repo_root.join("chaos.db"));
     let _ = std::fs::remove_file(repo_root.join("chaos.llm_telemetry.jsonl"));
     std::fs::copy(
-        repo_root.join("tests/uat/scenario_1_simon_brender/profile.md"),
+        repo_root.join("tests/uat/scenario_1_synthetic_apac_gtm/profile.md"),
         repo_root.join("pty_probe_profile.md"),
     )?;
 

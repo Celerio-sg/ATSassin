@@ -162,11 +162,12 @@ fn utf16_decode_helper() {
 fn parser_handles_uat_profile() {
     use atsassin::engine::profile_parser::ProfileParser;
 
-    let text = std::fs::read_to_string(uat_fixture("scenario_1_simon_brender/profile.md")).unwrap();
+    let text =
+        std::fs::read_to_string(uat_fixture("scenario_1_synthetic_apac_gtm/profile.md")).unwrap();
     let profile = ProfileParser::profile_from_text(&text).unwrap();
 
     assert_eq!(
-        profile.name, "Simon Brender",
+        profile.name, "Maya Kestrel",
         "name label should be stripped"
     );
     assert!(
@@ -187,7 +188,7 @@ fn parser_handles_uat_profile() {
         profile
             .experience
             .iter()
-            .any(|e| e.title == "Founder" && e.company == "Celerio"),
+            .any(|e| e.title == "Founder" && e.company == "Meridian GTM Studio"),
         "structured header parsing should split title/company correctly, got: {:?}",
         profile
             .experience

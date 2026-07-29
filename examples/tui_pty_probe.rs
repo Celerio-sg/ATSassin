@@ -78,7 +78,7 @@ fn main() -> anyhow::Result<()> {
     cmd.env("PROFILE_PATH", "pty_probe_profile.md");
 
     std::fs::copy(
-        repo_root.join("tests/uat/scenario_1_simon_brender/profile.md"),
+        repo_root.join("tests/uat/scenario_1_synthetic_apac_gtm/profile.md"),
         repo_root.join("pty_probe_profile.md"),
     )?;
 

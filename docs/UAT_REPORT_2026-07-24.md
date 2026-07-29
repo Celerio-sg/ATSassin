@@ -12,7 +12,9 @@
 - **Provider actually used for most testing:** the repo's real `.env` has `LLM_PROVIDER=groq` (not `ollama`, contrary to what `.env.example` implies) with a working `GROQ_API_KEY`. Nearly all LLM-dependent steps below ran against **Groq (`llama-3.3-70b-versatile`)**, not local Ollama and not the documented tiered local models. This means "lightweight/CPU-only local" behavior is largely **untested** in this pass — see Issue #5.
 - **Hosted API coverage:** Groq — fully tested, worked well. Kimi — API call correctly formed, but the configured Moonshot account is suspended for insufficient balance (`429`, external billing issue, not an app bug). Lightning AI — every attempt returned `401 Unauthorized`; root cause unconfirmed (could be a request/auth-format bug in the app or an invalid credential — needs follow-up with known-good Lightning credentials). GLM/OpenRouter/OpenAI/Anthropic — not tested (no key configured).
 - **`--preset` flag:** exists and works (contradicts the older `AUDIT.md` P0 finding that it was missing). However, for any hosted cloud provider it has **no effect on model choice** — `config.rs` forces light/balanced/full models to the same single hosted model, so `--preset` only changes timeout/retry/scrape-limit values in cloud mode. Local Ollama is the only path where preset actually changes which model runs.
-- Test data: used the project's own bundled `tests/uat/scenario_*/profile.md` fixtures for all 5 personas (these already existed in the repo, matching the protocol's Tier 1 scenarios). Simon Brender's fixture is his real LinkedIn-derived profile.
+> **Privacy annotation (2026-07-30):** This report preserves the original observed outcomes and scores. Issue #146 replaced the identity-bearing Scenario 1 fixture with a synthetic profile of equivalent test shape; candidate and employer identities have been removed or generalised.
+
+- Test data: used the project's own bundled `tests/uat/scenario_*/profile.md` fixtures for all 5 personas (these already existed in the repo, matching the protocol's Tier 1 scenarios). Scenario 1 now uses the synthetic senior APAC GTM profile.
 
 ---
 
@@ -22,7 +24,7 @@ All 5 scenarios were run through: `profile init` → `profile show` → `roles i
 
 | # | Persona | Profile parse | Roles inferred (quality) | Evaluate (quality) | Tailor reachable? |
 |---|---------|---------------|---------------------------|---------------------|--------------------|
-| 1 | Simon Brender | OK (name-label bug, skill-split bug, undercounted experience: 8/15 shown) | 9 roles, highly relevant (RVP APAC, GM APAC, Sales Director APAC, etc.) | Score 0.92 (A) vs a realistic interim-RVP JD; reasoning was specific and accurate | **No** |
+| 1 | Senior APAC GTM persona | OK (name-label bug, skill-split bug, undercounted experience: 8/15 shown) | 9 roles, highly relevant (RVP APAC, GM APAC, Sales Director APAC, etc.) | Score 0.92 (A) vs a realistic interim-RVP JD; reasoning was specific and accurate | **No** |
 | 2 | Returning Housewife | OK (same bugs) | 10 roles, on-target (Remote EA, Online English Teacher, VA, Bookkeeper) | Score 0.85 (B+) vs a matching remote-VA JD; correctly flagged the career gap and tooling gaps | **No** |
 | 3 | Worldschooling Parent | OK (same bugs) | 10 roles, on-target (Content Marketing, Curriculum Developer, Social Media Manager) | Not separately re-run (same code path as #2, no reason to expect divergence) | **No** |
 | 4 | Tokyo Graduate | OK (same bugs; Japanese/kanji text parsed without corruption) | 9 roles, sensible entry-level tilt (SDR, BDR Coordinator, Client Success, Sales Ops) | Not separately re-run | **No** |
@@ -41,7 +43,7 @@ Scored once across the Tier-1 set since the underlying defects/strengths are str
 | Role Inference | 25% | **4.5** | Consistently relevant, diverse, persona-appropriate across all 5 very different profiles. |
 | Tailoring Quality | 40% | **1.0** | Cannot be produced at all via the documented CLI flow for any scenario — see Issue #1/#2. Can't be scored on quality because it's unreachable. |
 | Overall Usability | 20% | **2.0** | Fast startup (17-30 ms), clean help/CLI ergonomics, most commands are smooth — but `evaluate --file` crashes on the project's own bundled fixture, `pipeline add/update/export` silently do nothing, and `scan` takes 20-60+ seconds returning fabricated-looking data. |
-| Assessment Accuracy | 15% | **3.0** | `evaluate` scoring is well-reasoned and appropriately calibrated (verified by manual read against Simon's real 25-year background). `market stats`/`market rates` are 100% static hardcoded text, identical regardless of role/persona — no real "assessment accuracy" exists there. |
+| Assessment Accuracy | 15% | **3.0** | `evaluate` scoring is well-reasoned and appropriately calibrated (verified by manual read against the long-form senior Scenario 1 background). `market stats`/`market rates` are 100% static hardcoded text, identical regardless of role/persona — no real "assessment accuracy" exists there. |
 
 **Weighted average: 0.25(4.5) + 0.40(1.0) + 0.20(2.0) + 0.15(3.0) = 2.375 / 5.0**
 
@@ -92,17 +94,17 @@ Severity definitions: **Critical** = blocks a core advertised feature or crashes
 
 ### #6 — MEDIUM — Profile name parsed with the field label still attached
 **File:** `src/engine/profile_parser.rs`
-**Repro:** any `profile init`/`profile show` — output is `Name: Simon Brender` instead of `Simon Brender`, reproduced identically across all 5 scenarios.
+**Repro:** any `profile init`/`profile show` — output retained the `Name:` field label, reproduced identically across all 5 scenarios.
 **Impact:** cosmetic but visible in every single profile-related output, including what gets fed back into prompts (role inference/evaluate probably see "Name: X" as the candidate's name too, though this wasn't confirmed to affect scoring quality).
 
 ### #7 — MEDIUM — Skill tokenizer splits hyphenated skills into two separate skills
 **File:** `src/engine/profile_parser.rs`
-**Repro:** Simon Brender's skill "Solution-oriented" is parsed as two list entries: "Solution" and "oriented".
+**Repro:** Scenario 1's skill "Solution-oriented" is parsed as two list entries: "Solution" and "oriented".
 **Impact:** skill counts are inflated/inaccurate, and any downstream matching against "Solution-oriented" as a single term would fail.
 
 ### #8 — MEDIUM — Experience-entry count is lower than the number of `Experience:` entries in the source file
 **File:** `src/engine/profile_parser.rs`
-**Repro:** Simon Brender's fixture has 15 `Experience:` lines; `profile init` reports "Experience entries: 8".
+**Repro:** Scenario 1's fixture had 15 `Experience:` lines at the time; `profile init` reported "Experience entries: 8".
 **Impact:** unclear if entries are being silently dropped/merged or if there's a parsing limit; needs investigation, as under-counting the candidate's actual work history could materially hurt role inference/evaluation quality for anyone with a long career (ironic given Persona 1 was designed to test exactly this).
 
 ### #9 — LOW — `roles infer -n N` prints an inferred-count that doesn't match what's displayed
@@ -172,7 +174,7 @@ The architecture, prompts, and role-inference/evaluation quality are sound — t
 **P1 — should fix before calling this release-ready:**
 6. Fix name-label stripping in `profile_parser.rs` ("Name: X" → "X").
 7. Fix skill tokenization to not split on internal hyphens ("Solution-oriented").
-8. Investigate/fix the experience-entry undercount (8 parsed vs 15 present in Simon Brender's fixture).
+8. Investigate/fix the experience-entry undercount (8 parsed vs 15 present in the then-current Scenario 1 fixture).
 9. Fix the `roles infer -n N` "Inferred X roles" message to match what's actually displayed.
 10. Add CLI-level (`assert_cmd`-based, already a dev-dependency) black-box tests for `pipeline add/update/list/export`, `evaluate --file`, and `tailor` end-to-end — this is the coverage gap that let #1-#3 ship.
 11. Confirm `scripts/setup_ollama.sh` actually pulls the exact model tags referenced in `.env.example`/README (`qwen3.5:4b`, `qwen3.5:9b`) and reconcile `.env` vs `.env.example`'s documented default provider.

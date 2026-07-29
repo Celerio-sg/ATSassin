@@ -61,13 +61,15 @@ This is not merely a bug. **It makes the continuous market-watch daemon (issue #
 
 ## P0-3 — Real-person PII in and beside the repository
 
-- The `tests/uat/scenario_1_*` fixture is **tracked** in a public MIT repo and contains a real individual's employment history, employers, awards, and immigration details — including in the directory name itself. `VENTURE_BOARD_REVIEW.md` re-identified the same person in prose (now removed).
-- `tail-notion-country-manager.md` at the repo root is a second CV export for the same person. I verified with `git check-ignore`: **it is not ignored.** A single `git add -A` publishes it.
-- `.freebuff/` is an 8.26 MB SQLite database from an unrelated desktop application, actively writing WAL files inside the working tree, with zero references anywhere in the repo. Its `*.db` files are incidentally ignored; the directory is not.
+> **Resolved 2026-07-30 (#146):** Scenario 1 is now a wholly synthetic senior APAC GTM persona with equivalent test shape. Current-tree test, example, and report references are anonymised; historical observations remain annotated.
+
+- At the time of this review, the `tests/uat/scenario_1_*` fixture was **tracked** in a public MIT repo and contained a real individual's employment history, employers, awards, and immigration details — including in the directory name itself. `VENTURE_BOARD_REVIEW.md` re-identified the same person in prose (now removed).
+- At review time, `tail-notion-country-manager.md` at the repo root was a second CV export for the same person and was not ignored. It is now covered by the root `/tail-*.md` rule, so `git add -A` cannot publish it.
+- At review time, `.freebuff/` was an 8.26 MB SQLite database from an unrelated desktop application, actively writing WAL files inside the working tree, with zero references anywhere in the repo. The directory is now covered by `/.freebuff/`.
 
 The `.gitignore` is otherwise scrupulous about exactly this class of file (`:16`, `:36-37`, `:56-60`), which makes these the gap rather than the pattern.
 
-**Fix:** replace scenario_1 with a synthetic persona (the other four already are); move both stray files out of the tree; add `.freebuff/` and a root-level CV pattern to `.gitignore`.
+**Resolution:** Scenario 1 is synthetic; `.freebuff/` and the root CV export pattern are ignored. Local ignored material remains outside repository history and must not be force-added.
 
 ## Correction — this review's stub hunt had a blind spot
 

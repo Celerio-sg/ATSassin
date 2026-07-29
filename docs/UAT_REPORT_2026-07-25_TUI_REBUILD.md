@@ -4,6 +4,8 @@
 **Scope:** (1) chaos-engineering review of the rebuilt TUI, redesigned against a provided concept mockup; (2) a broader gap-closing pass (G1-G7) covering onboarding, preference filters, job-source breadth, LLM-cost efficiency, pipeline tracking depth, and description-extraction quality; (3) a full 5-persona UAT re-run through the real TUI.
 **Prior report:** [UAT_REPORT_2026-07-24.md](UAT_REPORT_2026-07-24.md) (CLI-focused; scored 2.375/5.0, "Needs Fixes") and [FIX_PLAN_2026-07-24.md](FIX_PLAN_2026-07-24.md) (the fix sprint that followed it). This report picks up after that sprint closed the Critical/High CLI issues.
 
+> **Privacy annotation (2026-07-30):** This report preserves the original observed outcomes and scores. Issue #146 replaced the identity-bearing Scenario 1 fixture with a synthetic profile of equivalent test shape; candidate and employer identities have been removed or generalised.
+
 ## 0. Method note
 
 Every claim below was verified by actually running the real binary — never by reading code and asserting it should work. Two harnesses were used throughout:
@@ -58,7 +60,7 @@ Each of the 5 Tier-1 personas (`tests/uat/scenario_*/profile.md`) was driven thr
 
 | Persona | Roles inferred | Scan | Evaluate |
 |---|---|---|---|
-| Simon Brender | 10, all senior APAC GTM/sales — relevant | 25 real jobs (LinkedIn + HackerNews) | **85% (B+)** — real dimension breakdown, real strengths |
+| Scenario 1 senior APAC GTM profile | 10, all senior APAC GTM/sales — relevant | 25 real jobs (LinkedIn + HackerNews) | **85% (B+)** — real dimension breakdown, real strengths |
 | Returning Housewife | 10, on-target (Remote EA, Online English Teacher, VA...) | 25 jobs | **40% (D)** — correctly low: the default-selected job was an irrelevant HackerNews thread, not a real posting (see finding below) |
 | Worldschooling Parent | 10, on-target, **but comp figures implausibly inflated** ($250k–$350k median for a part-time remote content/VA role) | 10 real LinkedIn jobs confirmed scraping before probe timeout; full completion not captured in this run's time budget | not reached in this run |
 | Tokyo Graduate | 10, sensible entry-level tilt, **same comp inflation bug** ($300k–$350k for an entry-level new-grad SDR role) | 25 jobs | **62% (C+)** — real, well-reasoned dimension breakdown |
@@ -89,7 +91,7 @@ Both fixes are unit-testable at the boundary (comp clamping) or behavior-level (
 | Dimension | Weight | Score | Rationale |
 |---|---|---|---|
 | Role Inference | 25% | **4.3** | Consistently relevant across all 5 personas in both runs; compensation-hallucination defect confirmed fixed against real LLM output in the second run (no more unbounded figures, clean clamping observed). |
-| Tailoring Quality | 40% | **4.0** | Genuinely reachable and produces real, grounded output (verified: a real 3.4KB tailored resume+cover letter referencing Simon's actual Celerio/DataRobot history) — closes the single largest gap from the 2026-07-24 report, where this scored 1.0 (unreachable). |
+| Tailoring Quality | 40% | **4.0** | Genuinely reachable and produces grounded output (verified: a 3.4KB tailored resume and cover letter referencing the source profile's actual employment history) — closes the single largest gap from the 2026-07-24 report, where this scored 1.0 (unreachable). |
 | Overall Usability | 20% | **4.3** | Cross-platform terminal handling fixed, zero crashes across 10 persona-sessions (two full 5-persona runs), real onboarding, real preference/relevance filtering. Default-sort defect confirmed fixed in the second run (5/5 personas evaluated a real job, not an aggregator post) - docked slightly for the residual cosmetic post-evaluate re-sort issue. |
 | Assessment Accuracy | 15% | **4.0** | The scoring engine itself is well-calibrated and consistent across all 10 persona-sessions; the compensation-hallucination defect (the main accuracy issue found) is confirmed fixed against real model output, not just a unit test. |
 
@@ -103,7 +105,7 @@ A large improvement over the 2026-07-24 CLI-focused pass (2.375/5.0), driven by 
 
 ## 6. Follow-ups for a future session
 
-1. Run `examples/tui_final_uat_probe.rs` (or extend it) to also exercise `t` (tailor) for all 5 personas, not just Simon Brender, to fully close the Tailoring Quality dimension's remaining uncertainty.
+1. Run `examples/tui_final_uat_probe.rs` (or extend it) to also exercise `t` (tailor) for all 5 personas, not just Scenario 1, to fully close the Tailoring Quality dimension's remaining uncertainty.
 2. Fix the cosmetic post-evaluate sort revert: `EvaluateDone`'s `refresh_from_db()` could re-apply `sort_by_relevance()` when a profile is loaded, matching `ScanComplete`'s behavior.
 3. Consider incremental job-table refresh per-board during scan (currently the table only updates once every board — including the slow 11-platform "social" aggregator — has finished), so users see real LinkedIn/Greenhouse results immediately instead of waiting on the slowest source.
 4. G7 (employer ratings, referral network) remains open pending either a licensed data source or a user-supplied-contacts feature.
