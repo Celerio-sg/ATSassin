@@ -191,6 +191,17 @@ Three ways out, in preference order:
 
 Successive shortest paths with potentials (Bellman-Ford init, then Dijkstra). Roughly 200 lines, or `petgraph` — note it is **not currently a dependency**, so adding it is a real decision, not a free one.
 
+**Complexity, derived rather than asserted.** With 5,000 postings and ~30 archetypes:
+
+```
+V = 1 source + 1 user + 30 archetypes + 5000 postings + 1 sink  ≈ 5,033
+E = 1 + 1 (slack) + 30 + 5000 + 5000                            ≈ 10,032
+```
+
+SSP performs one Dijkstra per unit of flow, and flow value is bounded by the budget `B` (≈7), **not** by the number of postings. So the work is `B · O(E log V)` ≈ `7 × 10,032 × 12.3` ≈ **0.9 M operations**, roughly **9 ms** in release Rust — about 12× inside the 100 ms acceptance criterion.
+
+This is why the posting count barely matters: postings add edges, but augmentations are capped by the budget. Even the effort-quantisation resolution to the #167 conflict, which multiplies edges by the max effort units per posting (say 4), lands near 35 ms and stays polynomial.
+
 **Why SSP:** costs are all non-negative (`−log` of a probability ≤ 1), the graph is small and layered, and SSP with potentials is the simplest correct choice at this scale. Network simplex and cost-scaling are faster asymptotically and not worth the complexity for a few thousand nodes. Since costs are non-negative, **Bellman-Ford initialisation is unnecessary** — potentials start at zero and Dijkstra suffices from the first iteration.
 
 **Not Hopcroft-Karp, not Ford-Fulkerson.** Hopcroft-Karp solves maximum-cardinality bipartite matching, which is degenerate here (one candidate) and cannot express costs at all. Ford-Fulkerson solves max-flow without costs. Neither expresses the objective; both are recorded here so the choice is not relitigated.
