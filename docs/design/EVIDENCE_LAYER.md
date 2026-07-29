@@ -50,7 +50,18 @@ Public, documented, intended-for-programmatic-consumption endpoints. `scraper.rs
 | Ashby | `GET /posting-api/job-board/{name}?includeCompensation=true` | **compensation tiers**, `isRemote`, `employmentType`, `publishedAt` |
 | Workday | `POST /wday/cxs/{tenant}/{site}/jobs` | title, location, `postedOn` |
 
-`employmentType` from Lever `commitment` and Ashby is what makes the user's existing `ContractOnly` preference a **fact rather than a keyword guess**. Today contract detection is a substring scan for `"contract"|"interim"|"fractional"|…` over title+description (`landscore.rs:26-33`).
+`employmentType` from Lever `commitment` and Ashby is what makes an employment-type preference a **fact rather than a keyword guess**. Today employment-type detection is a substring scan over title+description (`landscore.rs:26-33`), which is English-only and therefore silently degrades outside anglophone postings.
+
+> ### ⚠️ These four platforms serve a minority of the world's labour market
+>
+> Greenhouse, Lever, Ashby and Workday are concentrated in US and Western-European technology employment. A user in Japan, India, China, Indonesia, Brazil, Nigeria or most of the world will match **almost nothing** at this tier, and would experience the ladder as broken rather than as thorough.
+>
+> Two consequences that must shape the build order:
+>
+> 1. **Tier 4 (JSON-LD) is the universal path, not the fallback.** Schema.org `JobPosting` is driven by search-engine visibility incentives that apply in every market and language. For non-Western users it is the *primary* tier, which is why it is specced as the highest-leverage single tier and should ship first among the extraction tiers.
+> 2. **Regional ATS are a first-class extension point, not a nice-to-have.** The tier-2 table is a starting set, and its Western skew is an artifact of where the existing code began — not a judgment about which markets matter. Adding a regional ATS must be one new file implementing `JobSource`, with no changes elsewhere. Contributors who work in under-served markets are the highest-value contributors this layer can attract, and the issue tracker should say so.
+>
+> A tier-coverage metric per region belongs in the drift telemetry below: if users in a region are consistently resolving at tier 4 or falling through entirely, that is a sourcing gap to be filled, not noise.
 
 ### Tier 3 — SSR hydration blobs
 

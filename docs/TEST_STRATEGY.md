@@ -67,6 +67,26 @@ Already exists (`board_health.yml`, daily cron) and genuinely asserts — it gre
 
 ---
 
+## Tier 3b — Profile-shape matrix (the agnosticism gate)
+
+A tool claiming to serve everyone cannot be validated on one person. The 2026-07-29 trial ran a single profile shape — senior generalist, APAC, contract-seeking, anglophone — and that shape is close to the best case for several mechanisms in the architecture, which makes it the *weakest* possible evidence that they generalise.
+
+**Every layer must be exercised across the matrix below before its acceptance criteria are considered met.** These are synthetic profiles (ADR-007); the five existing UAT personas are the starting set and are insufficient on their own.
+
+| Axis | Shapes that must be covered | What it stresses |
+|---|---|---|
+| **Career stage** | early-career (one demonstrated skill), mid, senior generalist | Diversification cap must derive to ~1 for early-career without being told |
+| **Adjacency structure** | generalist (high), licensed specialist (near-zero) | A specialist must not be pushed toward adjacent families |
+| **Urgency regime** | selective (one considered move), throughput (income needed soon) | Both regimes must produce sensible slates; neither is moralised about |
+| **Market** | US/W-EU, plus at least two of India, Japan, Brazil, Indonesia, Nigeria | Tier-2 ATS coverage collapses outside the West; tier 4 must carry it |
+| **Language** | anglophone, plus at least one non-English posting corpus | Employment-type and seniority detection are English substring matches today |
+| **Structural factors** | career gap (caregiving), older candidate, work-authorisation constrained | The dominant structural factor differs per user and must be attributable |
+| **Employment type** | permanent, contract/fractional, part-time | Preference handling must not privilege the shape that was tested first |
+
+**Failure to serve a shape is a finding, not an exclusion.** If the tool returns nothing useful for an early-career candidate in Jakarta, that is a tracked gap in the sourcing or scoring layer — not evidence that the user is out of scope. The mission is explicit that the only thing which should change per user is *what the tool discovers*, never *how the tool operates*.
+
+**Minimum bar before any layer ships:** the layer behaves sensibly — not necessarily well, but sensibly and honestly — on every row above, with degenerate parameter values reachable where the shape calls for them.
+
 ## Tier 4 — Live outcome trial (non-deterministic, manual, the real test)
 
 This is the tier that tests the product rather than the code. It runs against a real profile, real postings, and real applications, and it produces the **calibration baseline** that [Layer 2](design/CALIBRATION_LAYER.md) is fitted against.
@@ -199,9 +219,19 @@ This is now a required test case: **an evaluation must never list a structural f
 
 **Honest-failure held where it was implemented.** Zero-result queries reported honestly with no fabricated postings, and `posted date unknown` was rendered truthfully rather than defaulted — the Greenhouse path does not fabricate dates. The fabrication is confined to the paths ADR-002 names.
 
-### Baseline established
+### Baseline established — and what this trial does NOT establish
 
 This trial is the **calibration baseline**: prior-dominated, `n` small, no outcome data yet. Applications submitted from this slate and tracked through `outcomes sync` become the first real observations for [Layer 2](design/CALIBRATION_LAYER.md). Until those outcomes arrive, every conversion figure the tool reports must be labelled prior-dominated.
+
+Stated plainly, because the trial is persuasive in ways it has not earned:
+
+- **It is one profile shape.** Senior generalist, APAC, contract-seeking, anglophone. See the Tier 3b matrix — the mechanisms this trial appears to support are the ones this shape is best-positioned to benefit from.
+- **The adjacent-framing result is an illustration, not a validation.** A 25-year generalist is close to the best possible case for adjacency. A licensed specialist would likely show the opposite, correctly.
+- **It produced zero outcome data.** The trial is *initiated*, not complete. Tier 4 completes when transitions are observed over the following weeks, not when the applications are sent. Any claim that the tool "works" on the strength of this run is unsupported.
+- **Two boards returned zero on every query** and, under current error-swallowing (#145), cannot be distinguished from silent failure. Part of the pool may be missing.
+- **The compensation floor was defaulted, not chosen**, until corrected mid-trial (#155).
+
+What the trial *does* establish, because these were observed directly rather than inferred: the duplication defect (#142), the tier-collapse defect, the structural-factor misclassification (#151), and that the end-to-end pipeline runs without crashing against live sources.
 
 ---
 

@@ -58,21 +58,31 @@ Observed outcomes are decomposed into two groups, and only one may drive recomme
 
 | Controllable — drives recommendations | Structural — attributed, never actioned |
 |---|---|
-| Tailoring depth (`edit_distance`) | Name-based screening bias |
-| Submission latency (days after `posted_at`) | Employment-gap filters |
-| Role-fit score | Prior self-employment penalty |
-| Role-family / segment choice | Market tightness for the segment |
-| Application volume | Duration-dependence (demand-side) |
+| Tailoring depth (`edit_distance`) | Name / ethnicity-signalled screening bias |
+| Submission latency (days after `posted_at`) | Age (both directions) |
+| Role-fit score | Career gaps — caregiving, medical, military transition, incarceration |
+| Role-family / segment choice | Prior self-employment or gig-economy history |
+| Application volume | Work-authorisation and visa status |
+| Which sources are used | Disability, and disability disclosure effects |
+| | Gender, and gender-signalled role segregation |
+| | Non-native language or accent signals |
+| | Education-institution prestige and credential-country recognition |
+| | Market tightness for the segment and region |
+| | Duration dependence (demand-side) |
 
-A naive model fitted to raw outcomes learns *"you are a weak candidate"* when the actual signal is documented market discrimination. Correspondence studies put minority-named callbacks at 25–50% of baseline and prior self-employment under 10% — a founder re-entering employed roles, which is precisely this project's founding persona, sits in the worst-penalised bucket in the literature.
+**The structural list must never be tuned to whoever is testing.** The five factors this table opened with were drawn from one profile's circumstances, which is precisely the failure mode this section exists to prevent. Any user's dominant structural factor is likely to be absent from a list assembled around someone else: for a returning parent it is the caregiving gap, for a candidate over 55 it is age, for a recent migrant it is credential recognition and work authorisation, for a disabled candidate it is disclosure effects. Contributors adding a factor should add it to the *structural* column by default and require evidence before treating anything as controllable.
+
+A naive model fitted to raw outcomes learns *"you are a weak candidate"* when the actual signal is documented market discrimination. Correspondence studies put minority-named callbacks at 25–50% of baseline; comparable field-experiment penalties are documented across most rows above.
 
 The tool must therefore say:
 
-> Your callback rate is below the population baseline. Field experiments attribute a large share of this gap to screening effects on prior self-employment rather than to candidate quality. Of the factors you control, submission latency is where your own data shows the largest effect.
+> Your callback rate is below the population baseline. Field experiments attribute a large share of this gap to screening effects on [factor] rather than to candidate quality. Of the factors you control, submission latency is where your own data shows the largest effect.
 
 Not:
 
 > Your callback rate is 1.2%. Consider lowering your target seniority.
+
+**Attribution requires evidence, and silence is the honest default.** Do not infer a protected characteristic in order to attribute an effect to it. Attribute only from what the user has explicitly told the tool or what is unambiguously present in the profile they supplied. Where the model detects an unexplained gap it cannot attribute, it says exactly that — an unexplained shortfall is a more honest output than a guessed cause, and guessing here means inferring ethnicity or disability from a name or a gap.
 
 Per [REJ-008](../DECISIONS.md#rej-008--acting-on-structural-bias-data-as-advice), structural factors enter as attribution only. Any feature suggesting name anglicisation or gap concealment is permanently out of scope regardless of measured efficacy.
 

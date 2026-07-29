@@ -115,6 +115,35 @@ This binds equally to:
 
 `.gitignore` enforces the local half (root CV patterns, `/profile.md`, `/apply_kit_*/`, `/assets/examples/`). The rest is review discipline — check it on every PR.
 
+## ADR-008 — Parameters are derived or user-set; the testing profile is not the design profile
+
+**Date:** 2026-07-29 · **Status:** Accepted
+
+Every feature must work for any profile, any industry, any seniority, any market. The threat to that is not carelessness — it is that **whoever is testing supplies the vivid, concrete detail that makes a design feel well-grounded**, and their circumstances then get written into the spec as universals.
+
+This is not hypothetical. The first draft of the three layer specs, written and reviewed in one sitting against a single live profile, contained all of the following:
+
+| Leaked assumption | Whose it was | Why it fails others |
+|---|---|---|
+| "~5–15 tailored applications a week" | A selective senior candidate | Wrong by an order of magnitude for early-career, high-volume markets, or anyone under time pressure |
+| Diversification across role families is valuable | A 25-year generalist | Harmful for licensed specialists; counterproductive for early-career candidates where breadth reads as unfocused |
+| Structural factors = name bias, gaps, self-employment, market tightness | One person's circumstances | Omitted age, caregiving, disability, work authorisation, language, credential recognition, gender — the *dominant* factor for most users |
+| Tier-2 ATS = Greenhouse / Lever / Ashby / Workday | US/Western tech employment | Matches almost nothing across most of the world's labour market |
+| Employment-type detection by English substring match | An anglophone user | Silently degrades on every non-English posting |
+
+None was written in bad faith; each felt like precision at the time, because it was precise — about one person.
+
+**The rules that follow:**
+
+1. **No constant that varies by circumstance.** Effort budgets, diversification caps, seniority bands, tailoring thresholds: derived from the user's own data, or asked. A number fitted to one profile and hardcoded is a defect, not a default.
+2. **A valid parameter range includes its degenerate case.** Diversification of 1 (none) must be reachable. So must a slate of 1, and a fit floor of 0.
+3. **Enumerated lists of human circumstance are assumed incomplete.** Structural factors, employment types, work arrangements, document formats. Default to adding, and never let the testing profile define the list's boundaries.
+4. **A single-profile result is an illustration, never a validation.** Label it as such in the text. Claims about how often a mechanism pays off require the multi-shape trial matrix in [TEST_STRATEGY.md](TEST_STRATEGY.md).
+5. **Geographic and linguistic coverage is stated, not implied.** Where a mechanism serves one region well, say which regions it does not serve, and treat that as a tracked gap.
+6. **The tool does not moralise about the user's objective.** Someone applying broadly under time pressure has a different objective function, not a worse strategy.
+
+**Review question for every PR:** *would this behave sensibly for a user unlike the person who wrote it?* If the answer needs a caveat, the caveat is the missing parameter.
+
 ---
 
 # Rejected

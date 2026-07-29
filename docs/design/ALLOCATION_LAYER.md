@@ -13,7 +13,7 @@ This is the inflection. Everything below it is infrastructure for this output.
 
 Every competitor, and ATSassin today, sorts by score and shows the top N. That is a commodity: LinkedIn has one, every tool in the benchmark has one, and a better sort is a better commodity.
 
-The user's actual constraint is not "which is best" but **"which subset, given that I can only do ~5–15 genuinely-tailored applications a week"**. Deep tailoring is what produces the 8–15% callback rate; volume destroys it, which is why mass-apply tools fail. Under that constraint, greedy ranking is provably suboptimal for three independent reasons:
+The user's actual constraint is not "which is best" but **"which subset, given a finite budget of genuinely-tailored applications per period"**. Deep tailoring is what produces the higher callback rate; undifferentiated volume does not, which is why mass-apply tools fail. Under that constraint, greedy ranking is provably suboptimal for three independent reasons:
 
 1. **Postings expire at different rates.** A 6-day-old posting must be acted on now; a 1-day-old one can wait a cycle at no cost. Sorting by score cannot express a deadline.
 2. **Effort is a shared, renewable-per-period resource.** Spending it on the #1 and #2 roles may be worse than #1 and #7 if #1 and #2 are near-identical.
@@ -21,7 +21,42 @@ The user's actual constraint is not "which is best" but **"which subset, given t
 
 Point 3 is where greedy fails hardest, and it is **exactly this project's founding insight**. The trial that reframed "VP Sales" to "Program Manager" found stronger matches immediately. The board review files this under *unawareness* and treats it as a discovery problem. It is a **portfolio allocation problem**, and modelling it as one is the novel move.
 
-A live scan on 2026-07-29 reproduced this precisely: against the same 44-company sweep, `"Sales Director"`, `"Country Manager"` and `"Fractional Chief Revenue Officer"` each returned **0** jobs, while `"Program Manager"` returned **46** and `"Business Development"` returned **43**. The obvious senior titles were empty; the adjacent framing was where the roles were. Diversification is not a hedge here — it is where the opportunities actually are.
+A live scan on 2026-07-29 illustrated this: against the same 44-company sweep, `"Sales Director"`, `"Country Manager"` and `"Fractional Chief Revenue Officer"` each returned **0** jobs, while `"Program Manager"` returned **46** and `"Business Development"` returned **43**. The obvious titles were empty; the adjacent framing was where the roles were.
+
+**Read that as an illustration, not as validation.** It is n=1, and that one profile — a 25-year generalist with transferable function across several industries — is close to the best possible case for adjacency. It demonstrates that the mechanism *can* pay off; it does not establish how often, for whom, or by how much. A licensed specialist run through the same test would likely show the opposite, and that is the expected and correct result rather than a failure. Establishing the real distribution requires the multi-shape trial matrix in [TEST_STRATEGY.md](../TEST_STRATEGY.md).
+
+## Every parameter is derived or user-set. None is a constant.
+
+This layer is where founding-persona assumptions leak in most easily, so they are called out explicitly. **A parameter fitted to one profile shape and hardcoded is a defect, not a default.**
+
+### Effort budget
+
+Not a constant. The number of tailored applications a user can sustain per period varies by an order of magnitude across circumstances: a selective senior candidate making one considered move, a new graduate in a high-volume entry market, someone unemployed and needing income within weeks, someone applying around a full-time job and caring responsibilities.
+
+The budget is **user-set, with a derived starting suggestion** from their own observed throughput (`pipeline` transitions per week) once history exists. Before that, ask; do not assume.
+
+### Two regimes, both legitimate
+
+The literature's tailoring-depth advantage is a *rate*, not a strategy. Expected outcomes are rate × volume, and different circumstances optimise different terms:
+
+| Regime | Objective | Slate shape |
+|---|---|---|
+| **Selective** | Maximise P(offer) on few, high-fit applications | Small slate, deep tailoring, high fit floor |
+| **Throughput** | Maximise P(≥1 offer soon) under time pressure | Larger slate, tailoring depth traded against count |
+
+The solver handles both — it is the *same* min-cost flow with a different source capacity and fit floor. **The tool must not moralise about which regime the user is in.** Someone who needs income in three weeks is not doing it wrong; they have a different objective function, and telling them to make "one good move" would be advice masquerading as optimisation.
+
+### Diversification cap — derived from adjacency, and legitimately 1
+
+The cap must be **derived from the profile's actual adjacency structure**, not assumed. Adjacency availability varies enormously:
+
+- **High adjacency**: generalists with transferable function across industries. Diversification is high-value.
+- **Low adjacency**: licensed or credentialed specialists — clinicians, tax attorneys, airline pilots, actuaries — where "adjacent" roles are often a *downgrade* or legally unavailable.
+- **Narrow-by-stage**: early-career candidates with one demonstrated skill, where breadth reads as unfocused rather than versatile.
+
+**A cap of 1 (no diversification) is a valid solution and must be reachable.** Pushing a specialist toward adjacent families would be actively harmful, and pushing an early-career candidate to spread thin works against them.
+
+Derive adjacency from the role-archetype inference already in the pipeline: if inferred archetypes cluster tightly, adjacency is low and the cap tightens automatically. Do not hardcode a spread.
 
 ## Formulation
 
