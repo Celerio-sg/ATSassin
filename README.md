@@ -7,15 +7,23 @@
 [![GitHub stars](https://img.shields.io/github/stars/Celerio-sg/ATSassin?style=social)](https://github.com/Celerio-sg/ATSassin)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-brightgreen?logo=GitHub-Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fsimonbrender)](https://github.com/sponsors/simonbrender)
 
-> The silent killer of bad job matches.
+> The silent killer of bad career decisions.
 
-ATSassin is a lightweight, privacy-first, local-first job search assassin. It parses your CV, LinkedIn export, and portfolio to dynamically infer suitable roles, deep-research markets, score jobs with ATS accuracy, tailor resumes and cover letters, and track your pipeline — all on your machine with Ollama or your favorite local LLM.
+ATSassin is a **local-first, privacy-first, autonomous earning coach** — a single Rust binary that helps anyone, regardless of background, circumstance, location, finances, or compute power, discover their full earning potential and build a career that fulfils it.
+
+Three enemies stand between you and your earning potential:
+
+1. **🤖 AI automation** — roles close silently while you stay in one that is being redefined beneath you.
+2. **😴 Complacency** — your skills are worth more today than last year, but nobody tells you if the market has caught up.
+3. **👁️ Unawareness** — the best opportunities exist in roles, industries, locations, and arrangements you have never considered.
+
+ATSassin attacks all three — continuously, privately, and on any hardware. It parses your CV, LinkedIn export, or portfolio to dynamically infer suitable roles, deep-research markets, score jobs with ATS accuracy, tailor resumes and cover letters, and track your pipeline — all on your machine with Ollama or your favorite local LLM.
 
 > ⭐ **If ATSassin saves you time or helps you land a better role, please [give it a star on GitHub](https://github.com/Celerio-sg/ATSassin)** — it keeps the project visible and free for everyone.
 
 ## 🚀 Want to contribute?
 
-We'd love your help. This project is building a **free, autonomous earning optimizer for everyone** — and that only works if the community owns it.
+We'd love your help. This project is building a **free, autonomous earning optimizer for everyone** — a tool that never sells your data, never demands a subscription, and never assumes you can afford better hardware. That only works if the community owns it.
 
 - **First time?** Check out [`good first issue`](https://github.com/Celerio-sg/ATSassin/contribute) for small, self-contained tasks.
 - **Not sure where to start?** Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and say hello in [Discussions](https://github.com/Celerio-sg/ATSassin/discussions) (or open an issue — we read everything).
@@ -34,13 +42,15 @@ See [PLAYBOOK.md](PLAYBOOK.md) for the integrated APAC-focused playbook covering
 
 ## Why ATSassin? (and why contribute)
 
-- **Dynamic role inference**: one input (resume/LinkedIn/portfolio) -> 5-10 inferred role archetypes with market demand and compensation bands
+- **Dynamic role inference**: one input (resume/LinkedIn/portfolio) → 5-10 inferred role archetypes with market demand and compensation bands
+- **Preference-challenge insights**: discovers roles, industries, locations, and arrangements you would never have searched for — and shows you why they are worth considering
+- **Continuous market watch**: keeps an up-to-date view of everything available to you, without waiting for you to run a command
 - **Local-first**: 100% local inference via Ollama; optional cloud swap (Groq, OpenRouter, OpenAI, Anthropic, Kimi, GLM, Lightning)
-- **Hardware-adaptive**: runs on a 4GB laptop CPU, 8GB integrated graphics, or 32GB workstation
-- **Single binary**: `cargo build --release` and you're done — no Docker, no Python, no Node
+- **Hardware-adaptive**: runs on a 4GB laptop CPU, 8GB integrated graphics, or 32GB workstation — no excuse, no upgrade needed
+- **Single binary**: `cargo build --release` and you are done — no Docker, no Python, no Node
 - **Privacy**: SQLite on disk, zero telemetry, zero SaaS, zero third-party account required
 
-**Why this matters:** most job-search tooling is either expensive SaaS, opaque black-box AI, or sells your data. ATSassin is an open, local-first alternative that stays under your control. If you care about **privacy**, **open-source tooling**, **local AI**, or **democratizing access to better job outcomes**, there's a good chance your skills can help.
+**Why this matters:** most people are not earning what they are worth. The reasons — AI automation, complacency, unawareness — apply across every background, location, and career stage. Existing job-search tooling is either expensive SaaS that sells your data, opaque black-box AI, or Python repos that need a GPU and a weekend to install. ATSassin is a free, open, local-first alternative that stays under your control and runs on whatever hardware you already own. If you care about **privacy**, **open-source tooling**, **local AI**, or **democratizing access to better career outcomes**, there is a good chance your skills can help.
 
 ## Quick Start
 

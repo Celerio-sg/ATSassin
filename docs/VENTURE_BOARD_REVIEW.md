@@ -24,7 +24,7 @@
 
 ## 1. Executive Summary
 
-ATSassin is a **local-first, privacy-first, autonomous career transition engine** — a single Rust binary that helps knowledge workers whose roles are being automated or redefined to discover, evaluate, and pursue their best next earning opportunity.
+ATSassin is a **local-first, privacy-first, autonomous earning optimizer** — a single Rust binary that helps anyone, regardless of background, circumstance, location, finances, or compute power, discover their full earning potential and build a career that fulfils it.
 
 ### The Problem
 
@@ -53,7 +53,13 @@ All of this runs **on-device, with zero telemetry, zero data egress by default, 
 
 ### Why Now
 
-The labor market is undergoing a structural shift. AI automation is consolidating roles and redefining career trajectories across knowledge-worker segments — sales, marketing, program management, operations. The need is not for "better ATS keyword optimization" but for **career transition intelligence**: evidence-based answers about which adjacent roles are viable, what evidence gaps exist, and how to close them — grounded in real market data, not LLM hallucination.
+Most people are leaving earning potential on the table. The reasons fall into three categories that ATSassin addresses together:
+
+1. **AI automation** — roles are being consolidated and redefined across knowledge-worker segments, but the right response isn't panic — it's evidence-based awareness of which adjacent paths are viable.
+2. **Complacency** — it is easy to stay in a role that is comfortable but undervalues your skills. The market shifts constantly; the value of what you know today may not be what it was last year. Without continuous re-evaluation, earning potential silently erodes.
+3. **Unawareness** — opportunities exist in roles, industries, locations, and arrangements (contract, fractional, remote) that people never search for because they do not know to look. The single biggest deficit in career earnings is not lack of skill — it is lack of awareness of what exists.
+
+The need is not for "better ATS keyword optimization." It is for **continuous earning intelligence**: proactive discovery of opportunities, evidence-based challenges to assumptions about what you can do, and grounded data about what your skills are worth — in any market, for any profile, on any hardware.
 
 ### Key Metrics
 
@@ -74,23 +80,38 @@ The labor market is undergoing a structural shift. AI automation is consolidatin
 
 ### The Honest Positioning
 
-ATSassin began as "a free autonomous earning optimizer for everyone." The product today is a credible **application optimizer** — it parses profiles, discovers roles, evaluates fit, and tailors materials. That is a usable tool in a crowded, low-trust category.
+ATSassin began as "a free autonomous earning optimizer for everyone." That is still the mission — but the product today is a credible **application optimizer**: it parses profiles, discovers roles, evaluates fit, and tailors materials. That is a usable wedge in a crowded, low-trust category, but the wedge is not the mission.
 
-The sharper, defensible position is:
+The mission is broader:
 
-> **A private career transition engine for people whose roles are being automated.**
-> 
-> It helps an experienced knowledge worker identify and pursue viable adjacent roles — providing evidence about which adjacent work they can credibly move into, what evidence they're missing, how to close that gap, and which route gives them the best probability of earning again.
+> **ATSassin is a private, autonomous earning coach that helps anyone unlock their full earning potential.**
+>
+> It does this by proactively scouring the opportunity landscape for everything available to you, testing your preferences by recommending adjacent roles or locations that offer increased earning potential, and coaching you through the career moves that close the gap between where you are and where you could be.
+>
+> The enemies are threefold: AI automation that silently closes doors, complacency that keeps you in a role that undervalues you, and simple unawareness of the opportunities that already exist. ATSassin attacks all three — continuously, privately, and on any hardware.
 
 This positioning changes everything about prioritization:
 
-| Current framing | Sharper framing |
+| Current framing | Mission-aligned framing |
 |---|---|
 | "Improve prerank matching" | "Tell someone which adjacent role they can credibly walk into" |
 | "Salary inference dataset" | "Ground the 'will I earn as much?' anxiety in real data" |
 | "Preference-challenge insights" | "Surface the move they haven't considered" |
 | "Continuous market watch" | "Give them peace of mind that their value isn't silently dropping" |
 | "Calibrate against outcomes" | "Prove this actually helps people land" |
+| "Skill gap analysis" | "Close the gap between current and potential with targeted learning" |
+| "Crowd-sourced signals" | "Make every instance smarter by pooling what each one discovers" |
+| "LoRA ecosystem" | "Make the tool better for everyone by sharing quality-enhancing adapters" |
+
+### Who it serves
+
+**Everyone.** The tool is profile-agnostic by design — the same workflow that serves a senior enterprise sales leader in Singapore also serves a junior program manager in Berlin, a freelance designer in São Paulo, or a software engineer in Bangalore who has never considered contracting. The only thing that changes is what the tool discovers for you, not how the tool operates.
+
+But every tool needs a first believer. The founding persona that shaped the design is:
+
+**An experienced knowledge worker (sales, BD, program management — 10-20 year range) who has built real skills across multiple career phases, senses that their market value is shifting but cannot see where it is going, and needs to make one good move — not fifty applications.**
+
+This persona proves the workflow end-to-end. The architecture generalizes from there.
 
 ### Core Values
 
@@ -100,19 +121,16 @@ This positioning changes everything about prioritization:
 4. **Honest failure.** Missing salary, missing remote signal, or missing visa data is surfaced explicitly.
 5. **Lightweight first.** Rust-native, SQLite-based, quantized local models before cloud LLMs.
 
-### The Forcing Question
+### The Founding Trial
 
-> *Who is the first person you want ATSassin to save from a bad career outcome?*
+A live trial against the founder's own profile (Simon Brender — senior sales/BD/PM leader with APAC experience) ran the full workflow end-to-end: profile init → role inference → job scanning across 11 surfaces → LLM evaluation → tailoring → apply kit generation. The tool uncovered 4 contract roles (Airtable, PolyAI, PHARMExcel, Later) and produced 3 strong matches with scores ≥0.70, generating tailored resumes and cover letters for each.
 
-The answer, surfaced through a live trial against the founder's own profile (Simon Brender — senior sales/BD/PM leader with APAC experience). The trial ran the full workflow: profile init → role inference → job scanning across 11 surfaces → LLM evaluation → tailoring → apply kit generation. The tool uncovered 4 contract roles (Airtable, PolyAI, PHARMExcel, Later) and produced 3 strong matches with scores ≥0.70, generating tailored resumes and cover letters for each. Critically, the trial revealed that the tool was finding too few senior executive roles because its sourcing was too narrow — not because those roles don't exist. This directly informed the sourcing architecture redesign (issues #116, #130).:
+The trial revealed two things that shaped the design:
 
-**An experienced knowledge worker (sales, BD, program management — 10-20 year range) who sees their industry consolidating or their role being redefined by AI, senses their market value is changing but can't see where it's going, and needs to make one good move — not fifty applications.**
+1. **The tool works end-to-end.** The pipeline produced real, grounded, non-fabricated output across multiple personas.
+2. **The tool was finding too few senior roles because its sourcing was too narrow** — not because those roles do not exist. This directly informed the sourcing architecture redesign (issues #116, #130) and the broader insight that *lack of awareness* is the single biggest earnings limiter.
 
-This persona has:
-- Strong domain expertise (APAC, enterprise sales, GTM strategy)
-- Multiple career phases (startup founder, program leadership, sales leadership)
-- Contract/fractional/interim as a viable and preferred mode
-- The core problem: not "find any job" — it's "find the right adjacent role before the current one erodes"
+The trial also surfaced the key challenge for the career coaching dimension: when the user suggested "try Program Manager instead of VP Sales" — a role category they had not considered — the tool found stronger, more viable contract matches immediately. The insight was not that one role type is "better" than the other. It was that **most people are not searching for the right things**, and a tool that helps them discover what they should be searching for is more valuable than one that optimizes what they already search for.
 
 ---
 
@@ -598,18 +616,20 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 
 ---
 
-### 6.8 AI Exposure & Career Defense
+### 6.8 Career Awareness & Fulfillment
 
-**Goal:** Help users understand how AI automation affects their specific role and career trajectory, and identify defensible adjacent paths.
+**Goal:** Help users understand the full landscape of opportunities available to them — not just the job titles they already know — and identify paths that increase both earnings and fulfilment.
 
-**Current state:** Not implemented. No awareness of automation risk or career defense in the current codebase.
+**Current state:** Not implemented as a dedicated dimension. The existing role inference, preference-challenge, and market-rate features touch on this but are not yet coordinated into a coherent "awareness expansion" capability.
 
 **Design direction:**
-- **Role vulnerability assessment**: analyze which responsibilities in a user's current role are most automatable, and where human judgment still provides durable advantage.
-- **Adjacent defensible paths**: given the user's skill profile, identify roles with lower automation exposure that leverage their existing capabilities.
-- **Skill gap analysis**: surface specific, learnable skills that bridge from the current role to a more defensible adjacent role.
+- **Opportunity landscape expansion**: proactively surface role archetypes, industries, locations, and work arrangements the user has never searched for but that match their actual skills. This is distinct from "match me to jobs I applied for" — it is about discovering what you *could* do, not just scoring what you *did* apply for.
+- **Role vulnerability assessment**: analyze which responsibilities in a user's current role are most automatable (AI threat), most undervalued (complacency risk), or most undersupplied in their market (unawareness gap). Each factor points to a different kind of intervention.
+- **Adjacent opportunity paths**: given the user's skill profile, identify roles and arrangements (contract, fractional, remote, relocation) that leverage their existing capabilities differently — not just "safer from AI" but "better paid" or "more aligned with interests."
+- **Skill gap analysis**: surface specific, learnable skills that bridge from the current role to a higher-opportunity adjacent role. This is the coaching dimension: not just "you could do this" but "here is how to get there."
+- **Interests-outside-work discovery**: a structured exploration that surfaces genuine interests and connects them to real open roles the user would never have searched for — using the existing role-inference and scan infrastructure, seeded from interests rather than only from past job titles.
 
-**Issue map:** Not yet filed — identified as a gap in the design review.
+**Issue map:** Not yet filed — identified as a gap in the design review. The core challenge is integrating these discovery modes into the existing `role_inference`, `preferences`, and `recommend` pipeline without adding complexity that works against the hardware-floor principle.
 
 ---
 
@@ -776,7 +796,7 @@ Each is captured as a GitHub issue with acceptance criteria:
 
 6. **Should per-posting compensation negotiation advice be a feature?** The tool can infer whether a posted range is below market, but advice about how to negotiate is a high-liability area.
 
-7. **Where is the line between "career transition evidence" and "career advice"?** The former is defensible (market data, skill gap analysis); the latter carries liability. The product should stay on the evidence side.
+7. **Where is the line between "earning intelligence" and "career advice"?** Earning intelligence is defensible — market data, skill gap analysis, preference challenges backed by real numbers. Career advice carries liability — telling someone what they *should* do rather than showing them what the data says they *could* do. The product should stay firmly on the earning-intelligence side.
 
 8. **What is the right retention mechanism for non-job-hunting users?** Market-watch updates, preference challenges, and anti-atrophy insights are proposed but have not been validated with real users.
 
@@ -944,6 +964,8 @@ Early Issues
 | Version | Date | Author | Notes |
 |---------|------|--------|-------|
 | 1.0 | 2026-07-29 | ATSassin (Buffy) | Initial comprehensive review for venture/board discussion |
+| 1.1 | 2026-07-29 | ATSassin (Buffy) | Corrected positioning: broadened from 'career transition engine for AI-displaced workers' to 'universal earning optimizer for everyone.' Three-factor problem framing (AI, complacency, unawareness) throughout. Reframed 6.8 to Career Awareness & Fulfillment. Updated persona, founding trial, and open questions to match. |
+| 1.2 | 2026-07-29 | ATSassin (Buffy) | Updated README.md and ROADMAP.md to match new positioning. README now opens with the three-enemy framing. ROADMAP mission block added. |
 
 ---
 

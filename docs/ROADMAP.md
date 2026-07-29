@@ -1,5 +1,7 @@
 # Roadmap, Known Issues & Ethical Considerations
 
+> **The mission:** ATSassin helps anyone, regardless of background, location, finances, or compute power, unlock their full earning potential. The three enemies are **AI automation** (silently closing doors), **complacency** (staying in a role that undervalues you), and **unawareness** (not knowing what opportunities even exist). Everything below — the roadmap, the open gaps, the experimental features — serves that mission.
+>
 > **Ground truth for contributors:** the two most reliable documents in this repo are [UAT_REPORT_2026-07-24.md](UAT_REPORT_2026-07-24.md) (issues found and fixed via real end-to-end testing across 5 personas) and [COMPETITIVE_BENCHMARK_2026-07-25.md](COMPETITIVE_BENCHMARK_2026-07-25.md) (ATSassin actually run head-to-head against 7 competitor tools). Where this roadmap and older planning docs (`COMPARISON.md`, `EXECUTIVE_SUMMARY.md`, `RANKING.md`, `COMPLIANCE_MATRIX.md`, `../AUDIT.md`) disagree, trust the UAT/benchmark reports — they reflect what was actually run and observed, not what was planned or claimed. `AUDIT.md` in particular is a point-in-time red-team note from an early draft (2026-07-23) predating the UAT/benchmark work below — most of the gaps it lists have since been closed; read it as history, not a current status report.
 >
 > **For the structural plan behind staying ahead** (not just the list of open items below), see [CATEGORY_LEADERSHIP_ROADMAP.md](CATEGORY_LEADERSHIP_ROADMAP.md) — a red-team pass on where today's competitive position is fragile (undocumented API drift, a one-time benchmark snapshot, docs already drifting from shipped features) and what closes each gap structurally.
@@ -29,9 +31,9 @@ These are real, currently-open items, not resolved yet:
 - Company-directory-as-detector (see gap #1 above) — replaces a permanently-stale hand-maintained list with something derived from each company's own careers page.
 - Cloud-provider model tiering for `--preset` (gap #2).
 
-### Next — Career Coaching (flagship feature request)
+### Next — Career Coaching (flagship feature — attacking all three enemies)
 
-A built-in career coaching mode, going beyond "find and tailor applications for the job you already know you want" toward helping a candidate figure out what they actually want and whether their current position is still the best option:
+A built-in career coaching mode that goes beyond "find and tailor applications for the job you already know you want." This is the feature that makes ATSassin an earning coach rather than just an application optimizer, attacking all three enemies at once:
 
 - **Continuous market watch**: a scheduled background scan (or lightweight daemon on `balanced`+ hardware) keeps an up-to-date view of open roles that match the user's profile and preferences. It does not wait for the user to run a command.
 - **Preference-challenge insights**: when the data shows that a small change — relocating, switching to contract, picking up a named adjacent skill, or targeting a different industry — could materially improve income or prospects, ATSassin surfaces the finding as a question, not a prescription. Example: "Senior Rust engineers in Berlin report median compensation ~40% higher than your current market; would you consider relocation or remote hiring in that region?"
