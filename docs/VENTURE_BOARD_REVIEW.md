@@ -197,10 +197,12 @@ Additionally, several honest-failure violations were found and are scheduled for
 
 ### Known Verification Gaps
 
-1. **Low-spec hardware claim unvalidated.** The documented 4 GB CPU-only target has not been tested on actual low-spec hardware (issue #5).
-2. **Lightning AI provider returns 401 Unauthorized.** Unconfirmed whether bug or credential issue (issue #6).
-3. **Company directory hand-maintained.** Static 44-company list that will go stale; the permanent fix is an autonomous ATS detector (issue #1, design issue #116).
-4. **--preset does not differentiate hosted providers.** On cloud providers, `--preset` only changes timeout/retry values, not model choice (issue #3).
+> **Issue references corrected 2026-07-29.** All four gaps below previously cited issues that have since been closed (#5, #6, #1, #3). Two of those closures were duplicate cleanup; two closed issues whose underlying defect is **still live**. The live issue numbers are given below — verify against the tracker before starting work, not against this table.
+
+1. **Low-spec hardware claim unvalidated.** The documented 4 GB CPU-only target has never been tested on actual low-spec hardware. **This remains the largest unbacked claim in the project** — the entire "runs on any hardware" value proposition rests on it. Live issue: **#73** (#5 and #57 were closed as duplicates).
+2. **Lightning AI 401 is a code defect, not a credential issue.** `.env.example:18` declares `LIGHTNING_USER_ID`, which is never read anywhere in `src/`; authentication is bearer-only. Live issue: **#154** (#6 closed).
+3. **Company directory hand-maintained.** Static 44-company list that will go stale. Superseded mechanism: CNAME enumeration plus ATS API probe rather than careers-page HTML matching. Live issues: **#147**, **#116** (#1 closed).
+4. **`--preset` does not differentiate hosted providers — and the cause is now known.** `config.rs:422` calls `sync_tier_models()` unconditionally, overwriting the light/balanced/full model names with `default_model` on every load. Confirmed live on 2026-07-29 (`Synced tier models to default: llama-3.3-70b-versatile`). All three `ModelRouter` tiers resolve to one model, so the documented hardware-mode table above does not describe hosted-provider behaviour. Live issue: **#171** (#3 closed prematurely).
 
 ---
 
@@ -384,6 +386,10 @@ This section covers every design dimension discussed and their current status. E
 
 **Goal:** Discover every relevant role across the entire public internet, not just a handful of boards.
 
+> **Now Layer 1 — the evidence layer.** Delivered by the tiered extraction ladder: CNAME enumeration (#147) → ATS JSON APIs → `__NEXT_DATA__` SSR hydration (#148) → Schema.org JSON-LD (#149), behind the source trait (#130). Spec: [design/EVIDENCE_LAYER.md](design/EVIDENCE_LAYER.md).
+>
+> **Two additions from the 2026-07-29 review that are not in the original design direction below:** cross-board syndication dedup (#166) — the same requisition pushed to four boards produces four different URLs, which content-addressed identity (#142) does *not* collapse; and non-Western regional sources (#161), because the four ATS platforms named below serve US and Western-European tech and match almost nothing across most of the world's labour market.
+
 **Current state:**
 - 11+ scraping surfaces integrated
 - Concurrent company sweep (44 companies in ~16-26 seconds, measured 2026-07-29)
@@ -414,6 +420,14 @@ Replace the hand-maintained 44-company list with runtime detection: fetch a comp
 ### 6.2 Pragmatic Matching
 
 **Goal:** Match candidates to roles based on transferable skills and adjacent experience, not just keyword overlap.
+
+> **Substantially reframed, and three defects found underneath it.** The matching *stack itself* was found broken on 2026-07-29:
+>
+> - **#163** — `semantic_score` returns the L2 norm of a single embedding of the job and resume concatenated. It is not a similarity; there is no second vector. It carries **0.40, the largest weight** in the composite at `matcher.rs:60`. The weights below were therefore tuned while the largest term computed nothing, and must be re-derived rather than adjusted.
+> - **#168** — the **keyword paradox**: keyword matching has AUC 0.558 and keyword density correlates *negatively* with post-hire output, while remaining the operational gatekeeper. Tailoring to keywords is correct; treating a keyword score as evidence of *fit* is not. These must be separated and labelled differently.
+> - **#160** — the lexical path is English/Latin-script-only. CJK text collapses to one token under `prerank.rs:14-20`, and the byte-length filter silently drops "AI", "HR", "PM".
+>
+> The weighted taxonomy in #132 survives as a **feature extractor**; its asserted constants (1.0 / 0.7 / 0.4) are removed and fitted per-user by Layer 2 (#150) instead. Segment tags (#133) become the diversification dimension in Layer 3 rather than a prerank weight.
 
 **Current state:**
 - TF-IDF+bM25 prerank for fast lexical filtering (already good)
@@ -484,6 +498,13 @@ When multiple sources claim a salary for the same role/region, average across th
 
 **Goal:** Become the user's continuous career optimizer — not just a tool used during job search.
 
+> **Now Layers 2 and 3, and this is the flagship.** The vision below is intact but was under-specified — "insight cards" and "preference challenges" had no mechanism behind them, so any confidence label they carried would itself have been fabricated. They now have one:
+>
+> - **Layer 2** (#150, #151): per-user empirical-Bayes conversion estimates with mandatory shrinkage and intervals, plus controllable-vs-structural attribution
+> - **Layer 3** (#152, #153): the weekly allocated slate, and preference challenges as *solved counterfactuals* rather than heuristics
+>
+> **Blocking dependency:** the market-watch daemon (#121) cannot ship until #142 lands. Job IDs are currently random UUIDs, so the daemon re-evaluates every job on every tick at full LLM cost, indefinitely. Shipping continuous polling on that foundation ships unbounded silent spend. Specs: [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md), [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
+
 **Current state:**
 - Profile and preferences are saved and reusable
 - `recommend` command ranks all pooled jobs by composite score
@@ -520,6 +541,10 @@ The coaching loop keeps users engaged even when not actively job-hunting by help
 ### 6.5 Distillation Pipeline
 
 **Goal:** Turn usage data into smaller, faster, user-specific models that improve over time.
+
+> **Independent of the critical chain — proceed in parallel.** #109–#114 are orthogonal to Layers 1–3 and are not blocked by Step 0. One dependency to note: #109 reads the same `edit_distance` / feedback table that Layer 2 (#150) consumes, so coordinate on schema changes.
+>
+> **Two corrections to the "current state" claimed below:** the Unsloth training script is a placeholder comment with an unused import (`distillation.rs:419-421`), and the GGUF script probes a filename llama.cpp has renamed while passing a `--outtype` value that only accepts `f32/f16/bf16/q8_0` — so the advertised Q4_K_M path cannot execute. The ONNX and OpenVINO scripts are real. Separately, **#115 is reframed to Layer 2**: outcome calibration now fits the per-user conversion model rather than ranking distilled artifacts.
 
 **Current state (implemented):**
 - `atsassin distill` exports filtered high-confidence training pairs
@@ -576,6 +601,12 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 ### 6.6 Community LoRA Sharing & Provenance (Experimental)
 
 **Goal:** A community ecosystem where better source models naturally produce higher-ranked, more useful shared artifacts — without blockchain, without tokens, without centralized trust.
+
+> **Chain truncated 2026-07-29 — two of five stages are gone.** Stage 3 (DHT/P2P, #49) is **rejected**: see [REJ-001](DECISIONS.md#rej-001--p2p--dht-distributed-crawling-libp2p-kademlia-skademlia-merkle-crdt). Stage 4 (#50) is **deferred**, not rejected on its own merits, but its transport dependency is gone. **Stage 2 (#48) is reframed to Layer 2** — its estimator inputs are the calibration feature set, so the estimator becomes purely local and the anonymised vote-publishing is dropped.
+>
+> **Still live and independent of the chain:** Stage 0 (#46) and Stage 1 (#47). Adapter distribution stays on the HTTP registry indefinitely rather than graduating to P2P. Priority is below the critical chain.
+>
+> **One guardrail below is now known false.** The table states the PII gate "blocks export if detectable PII remains". It does not — the file actually uploaded off-device is written *after* the gate runs and is never checked (#143), and the detectors are US-only (#81). Do not build sharing on that gate until both land.
 
 **Design philosophy:**
 - Share LoRA adapters (10-200 MB), not whole models. Adapters apply to a base model the user already has locally.
@@ -846,21 +877,29 @@ Distillation cluster (#109–#114), LoRA Stages 0–1 (#45, #46, #47), onboardin
 
 ### Open Questions
 
+> **Status reviewed 2026-07-29.** Four of the eight below are now answered or moot. Their dispositions are recorded inline so contributors do not re-open settled ground; the genuinely open ones are marked as such.
+
 1. **Which external training stack should `atsassin distill` target first?** llama.cpp LoRA, MLX (Apple Silicon), or Unsloth? Current answer: whichever the existing script-generation path already targets; extend from there.
+   > **Still open**, but note the Unsloth path is currently a placeholder comment (`distillation.rs:419-421`) with an unused import, and the GGUF script probes a filename llama.cpp has renamed while passing a `--outtype` value that only accepts `f32/f16/bf16/q8_0`. Answer this by fixing what exists before adding a fourth target. Tracked under the distillation cluster (#109–#114).
 
 2. **What is the acceptable quality-drop threshold for deploying a distilled model?** No answer yet — needs empirical data from the evaluation harness (issue #111).
 
 3. **Which OAuth flow (Gmail, Outlook) is worth the implementation cost first for outcome ingestion?** Depends on what contributors' and early users' actual mail providers turn out to be. IMAP + app-password covers most providers day one.
+   > **Still open, and deliberately unfiled.** This is the correct answer for now: IMAP plus app-password works today, and choosing an OAuth provider before there are users to observe would be guessing. Revisit once outcome ingestion has real usage — the decision needs data the project does not yet have. Note the dependency: Layer 2 (#150) needs outcome volume, so if IMAP friction is suppressing ingestion this becomes urgent rather than deferred.
 
 4. **At what local-DB size does Phase 2's zstd compression stop being sufficient?** The threshold for cloud archival being worth building is unknown — needs to be measured in the field.
 
 5. **How should the Proof-of-Quality reputation algorithm work in practice?** The design says "empirical acceptance rate," but Sybil resistance, coordinator failure, and vote weighting are all underspecified.
+   > **Moot as posed.** #48 has been reframed to Layer 2: its estimator inputs (accepted outputs, edit distance, pipeline outcomes) are the calibration feature set, so the estimator moves to #150 as a purely *local* model. The anonymised vote-publishing half is dropped, being an outbound data path — the same ground on which #105 was rejected. With no cross-user voting there is no Sybil surface and no coordinator to fail.
 
 6. **Should per-posting compensation negotiation advice be a feature?** The tool can infer whether a posted range is below market, but advice about how to negotiate is a high-liability area.
+   > **Answered: no — see [ADR-009](DECISIONS.md).** Showing a user that a posted range sits below comparable postings is *earning intelligence* and is in scope, delivered by Layer 1's employer-supplied compensation (#149) plus corroboration (#120). Telling them what to say, what number to counter with, or when to walk is *advice*, is unmeasurable locally, and sits on the wrong side of the line drawn in Q7.
 
 7. **Where is the line between "earning intelligence" and "career advice"?** Earning intelligence is defensible — market data, skill gap analysis, preference challenges backed by real numbers. Career advice carries liability — telling someone what they *should* do rather than showing them what the data says they *could* do. The product should stay firmly on the earning-intelligence side.
+   > **Answered, and now enforced in three places.** The line is: *show the data and the conditional result; never prescribe the action.* Enforced by [REJ-007](DECISIONS.md) (no interview/ingratiation coaching — unobservable locally), [REJ-008](DECISIONS.md) (structural bias data is attribution only, never advice), [ADR-005](DECISIONS.md) (rates carry intervals, and structural factors never drive recommendations), and #153, where a preference challenge is a *solved counterfactual* — "relaxing location adds 0.9 expected interviews" — rather than "you should relocate".
 
 8. **What is the right retention mechanism for non-job-hunting users?** Market-watch updates, preference challenges, and anti-atrophy insights are proposed but have not been validated with real users.
+   > **Mechanism now specified; validation still open.** Layer 3 supplies it: the slate regenerates when the opportunity set changes materially (#121 as trigger rather than scanner), and the counterfactual re-solve (#153) gives a periodic, concrete read on market position without requiring an active search. Whether that actually retains anyone is unvalidated and needs the Tier 4 longitudinal trial (#159 for shape coverage) — **do not treat the mechanism existing as the question being answered.**
 
 ### Top Risks
 

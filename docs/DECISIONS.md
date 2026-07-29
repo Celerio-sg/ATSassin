@@ -144,6 +144,30 @@ None was written in bad faith; each felt like precision at the time, because it 
 
 **Review question for every PR:** *would this behave sensibly for a user unlike the person who wrote it?* If the answer needs a caveat, the caveat is the missing parameter.
 
+## ADR-009 — Show the data and the conditional result; never prescribe the action
+
+**Date:** 2026-07-29 · **Status:** Accepted · **Settles:** Board review Open Questions 6 and 7
+
+The product sits on the **earning-intelligence** side of a line it must not cross into **advice**. The line is not about tone or hedging language — it is about what the tool is in a position to know.
+
+| In scope — earning intelligence | Out of scope — advice |
+|---|---|
+| "This posted range sits below 8 comparable postings for this role and region" | "You should ask for £X" |
+| "Relaxing your location constraint adds 0.9 expected interviews" | "You should relocate" |
+| "Your callback rate is below baseline; field experiments attribute much of that gap to screening effects on [factor]" | "You should remove that from your CV" |
+| "Applications you tailored deeply converted at 9–13%; lightly tailored at 2–5%" | "You should apply to fewer jobs" |
+
+**The test:** can the claim be grounded in evidence the tool actually holds, and stated as a conditional or an observation? If it requires knowing the user's risk tolerance, finances, family situation, health, or what they want from their life — the tool does not know those things, and asserting them is advice wearing a data costume.
+
+**Specific consequences:**
+
+- **Compensation negotiation advice is out of scope** (Q6). Showing that a range is below comparable postings is in scope and is delivered by #149 and #120. Telling the user what to counter with, when to walk, or how to frame it is not — it is unmeasurable locally, and the tool has no visibility into the leverage that determines the answer.
+- **Interview coaching is out of scope** ([REJ-007](#rej-007--ingratiation-and-interview-behavioural-coaching)). The tool observes nothing inside an interview; modelling it would be fabrication.
+- **Structural-factor data is attribution, never instruction** ([REJ-008](#rej-008--acting-on-structural-bias-data-as-advice)).
+- **Preference challenges are solved counterfactuals** (#153), reporting an objective delta under a stated assumption — not a recommendation to act.
+
+**Why this is a hard boundary rather than a guideline:** advice is what the user most wants and what the tool is least equipped to give. Every feature in this product will, at some point, have an obvious-seeming extension that crosses this line and would demo extremely well. The reason to write it down is that the pull is toward crossing it.
+
 ---
 
 # Rejected
