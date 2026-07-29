@@ -87,7 +87,7 @@ Min-cost max-flow. Not maximum bipartite matching — with a single candidate th
                                                  ▼                                       │
                                           role archetype                                 │
                                                  │                                       │
-              [cap = 1, cost = −log( P(callback) · decay(age) )]                         │
+              [cap = 1, cost = 1 − P(callback)·decay(age) ]                              │
                                                  ▼                                       │
                                              posting                                     │
                                                  │                                       │
@@ -96,18 +96,25 @@ Min-cost max-flow. Not maximum bipartite matching — with a single candidate th
                                                 sink ◀────────────────────────────────────
 ```
 
-### ⚠️ The cost function is `−log( P · decay )`, **not** `−log P × decay`
+### ⚠️ The cost is `1 − P·decay`, and this replaces an earlier `−log(P·decay)`
 
-This is worth stating explicitly because the wrong form is the natural thing to write and it inverts the whole model.
+Two successive drafts got this wrong. The history is worth keeping because both errors are easy to repeat.
 
-With `decay ∈ (0,1]` shrinking as a posting ages, **multiplying** by decay *reduces* the cost of stale postings, and a min-cost solver therefore **prefers** them:
+**Draft 1 wrote `−log P × decay`**, which inverts the model: with `decay ∈ (0,1]` shrinking as a posting ages, *multiplying* reduces the cost of stale postings and a min-cost solver therefore prefers them. At `P = 0.10`, a 34-day posting scored 0.691 against a fresh one at 2.303 — the solver would have picked the stale one.
 
-| Posting | P(callback) | decay | `−log P × decay` ✗ | `−log(P · decay)` ✓ |
-|---|---|---|---|---|
-| fresh, 1 day | 0.10 | 1.0 | 2.303 | 2.303 |
-| stale, 34 days | 0.10 | 0.3 | **0.691 → preferred** | **3.507 → penalised** |
+**Draft 2 wrote `−log(P·decay)`**, which fixes the age direction but optimises the wrong quantity. Minimising `Σ −log pᵢ` maximises `Π pᵢ` — the probability that **every** application succeeds. Nobody wants that. Expected callbacks is `Σ pᵢ`, a different functional. "Log-additive" was the tell: log-additivity gives the product.
 
-Only the additive form (`−log P − log decay`) makes cost *increase* with age, which is what the <7-day review-bandwidth finding requires. Implement `−log(P · decay)` or equivalently `−log P − log decay`.
+| Objective | Correct edge cost |
+|---|---|
+| `E[#callbacks] = Σ pᵢ` ← **what we want** | `1 − pᵢ` (or any `C − pᵢ`) |
+| `P(≥1 callback)` | `log(1 − pᵢ)` |
+| `P(all succeed)` | `−log pᵢ` ← draft 2 |
+
+**Use `cost = 1 − P(callback)·decay(age)`.** Since `P·decay ∈ [0,1]`, the cost is in `[0,1]`: non-negative (so Dijkstra needs no Bellman-Ford init), bounded (no infinities), and minimising the total maximises `Σ Pᵢ·decayᵢ`, which **is** expected callbacks and is directly readable off the solution.
+
+Age direction still holds: fresh `1 − 0.10(1.0) = 0.90` beats stale `1 − 0.10(0.3) = 0.97`.
+
+**This also removes a hole the log form had.** With `τ = −log(P_min)` and a `P_floor = 1e-6` clamp, any `P_min < 1e-6` gave `τ > 13.8`, at which point clamped **zero-probability postings became cheaper than slack and were selected**. In the linear form `τ = 1 − P_min` and both sit in `[0,1]`, so the ordering cannot invert.
 
 ### The slack edge is load-bearing — and it must attach to `user`, not `source`
 
@@ -127,7 +134,7 @@ Worked example — budget `B = 5`, `τ = 2.996` (`P_min = 0.05`), posting costs 
 
 `τ` is the **reservation cost** — the price of *not* using a unit of budget. It is where the relevance floor lives, expressed inside the graph rather than as a pre-filter, and it must be user-visible and tunable: it is the knob that says "don't put things on my slate that aren't worth it."
 
-Set `τ = −log(P_min)` where `P_min` is the lowest callback probability the user considers worth an application.
+Set **`τ = 1 − P_min`** where `P_min` is the lowest callback probability the user considers worth an application. A posting is selected exactly when `1 − P·decay < 1 − P_min`, i.e. when `P·decay > P_min`. `P_min = 0` gives `τ = 1`, which is reachable — satisfying ADR-008's requirement that a fit floor of 0 be expressible.
 
 **Implementer's check:** with every posting cost above `τ`, the solver must return an **empty** slate. If it returns a full one, the slack is attached to the wrong node.
 
@@ -135,7 +142,7 @@ Each element earns its place:
 
 - **Source capacity** = the honest weekly tailoring budget. Encodes the constraint mass-apply tools pretend away.
 - **Role-archetype capacity** = diversification cap. This is what forces exploration of adjacent families rather than piling into one.
-- **Edge cost** = `−log P(callback)` from [Layer 2](CALIBRATION_LAYER.md), so minimising total cost maximises expected callbacks (log-additive over independent applications).
+- **Edge cost** = `1 − P(callback)·decay` from [Layer 2](CALIBRATION_LAYER.md). Minimising the total maximises `Σ P·decay`, which is expected callbacks by linearity of expectation — no independence assumption required.
 - **Age decay** operationalises the <7-day review-bandwidth window as a term in the objective, not a tip in the docs. Requires real `datePosted` from [Layer 1](EVIDENCE_LAYER.md).
 - **Posting capacity 1** — an application is one-shot and non-repeatable.
 
@@ -155,22 +162,23 @@ Everything a contributor needs, so the data structure and the details are not ch
 | Element | Value |
 |---|---|
 | `source → user` | cap = effort budget (derived or asked); cost 0 |
-| **`user → sink` (slack)** | cap = effort budget; cost = `τ` = `−log(P_min)`. **Must attach to `user`, not `source`** — see above |
+| **`user → sink` (slack)** | cap = effort budget; cost = `τ` = `1 − P_min`. **Must attach to `user`, not `source`** — see above |
 | `user → archetype` | cap = diversification cap for that family; cost 0 |
-| `archetype → posting` | cap 1; cost = `−log( P(callback) · decay(age) )` |
+| `archetype → posting` | cap 1; cost = `1 − P(callback)·decay(age)` |
 | `posting → sink` | cap 1; cost 0 |
 
-**Degenerate inputs — clamp from BOTH sides.**
+**Degenerate inputs.** The linear cost removes most of this class — `1 − P·decay` cannot be infinite or `NaN` for finite inputs, so there is nothing to floor from below. Two guards remain:
 
-- **Lower:** `P = 0` or `decay = 0` gives infinite cost. Floor both before the log, or exclude the posting.
-- **Upper: `decay` must be clamped to ≤ 1.** A future-dated `datePosted` (scheduled publication, timezone skew, bad ATS data — all routine) gives `age < 0`, so `decay = 0.5^(age/h) > 1`. If `P · decay > 1` the cost goes **negative**, and Dijkstra with zero-initialised potentials returns a wrong shortest path **silently** — no panic, no assertion, just a wrong slate. Worked case: `h = 7`, `age = −30`, `P = 0.10` → `decay = 19.5`, `P·decay = 1.95`, `cost = −0.668`.
-- Treat `age < 0` as `age = 0` (`decay = 1`), which is the honest reading: a posting cannot be fresher than new.
+- **Clamp `decay ≤ 1`.** A future-dated `datePosted` (scheduled publication, timezone skew, bad ATS data — all routine) gives `age < 0` and `decay = 0.5^(age/h) > 1`. If `P·decay > 1` the cost goes **negative**, and Dijkstra with zero-initialised potentials returns a wrong shortest path **silently**. Treat `age < 0` as `age = 0` (`decay = 1`) — a posting cannot be fresher than new. Worked case: `h = 7`, `age = −30`, `P = 0.10` → `decay = 19.5`, `P·decay = 1.95`, `cost = −0.95`.
+- **Clamp `P ≤ 1`.** A miscalibrated posterior should never exceed 1, but clamp rather than trust it — same negative-cost consequence.
+
+**Assert `cost ∈ [0,1]` before it enters the solver.** That single assertion catches both, and would have caught the negative-cost path immediately.
 
 Postings past `validThrough` are excluded rather than decayed, so the lower floor should rarely bind.
 
 **Posting-to-archetype multiplicity.** A posting may plausibly belong to several role families. Assign each posting to **exactly one** archetype — its highest-scoring — otherwise the diversification cap is unenforceable, since flow could reach one posting through several archetype edges and evade the cap. Record the alternates for display; do not add parallel edges.
 
-**Cost quantisation.** Successive shortest paths wants integer costs. Scale by a fixed factor (suggest 10⁴) and round: `cost_int = round(−log(P · decay) × 10_000)`. Document the factor — it bounds the precision of every allocation decision. Ties break on `(posting.id)` ascending so the solver is deterministic, which acceptance criterion 1 requires.
+**Cost quantisation.** Successive shortest paths wants integer costs. Scale by a fixed factor (suggest 10⁴) and round: `cost_int = round((1 − P·decay) × 10_000)`, giving integers in `[0, 10_000]`. Document the factor — it bounds the precision of every allocation decision. Ties break on `(posting.id)` ascending so the solver is deterministic, which acceptance criterion 1 requires.
 
 **Decay functional form.** Exponential with a documented half-life: `decay(age_days) = 0.5^(age_days / h)`. `h` is derived from observed data once Layer 2 has it, and is a documented parameter until then — not a hardcoded constant ([ADR-008](../DECISIONS.md)). Postings past `validThrough` (#149) are excluded from the graph entirely rather than decayed.
 
@@ -192,7 +200,7 @@ Neither was caught by reading. Both are caught immediately by a numeric test. **
 | 3 | All posting costs below `τ`, more postings than budget → slate size **equals budget** | Catches slack starving the posting path |
 | 4 | Postings in one family exceeding its cap → selection **stops at the cap**, remainder goes to other families or slack | Catches unenforced diversification |
 | 5 | Same input twice → **byte-identical** slate | Catches non-deterministic tie-breaking |
-| 6 | `P = 0` or `decay = 0` present → solver **completes**, no `inf`/`NaN` | Catches the degenerate-input path |
+| 6 | `decay > 1` (future-dated posting) present → all costs remain in `[0,1]`, solver completes | Catches the negative-cost path, which breaks Dijkstra **silently** |
 | 7 | Selected total cost ≤ cost of any other feasible selection of the same size | Catches a wrong-direction objective generally |
 | 8 | Budget of 1 → slate of exactly 0 or 1 | Catches off-by-one in source capacity |
 
@@ -225,7 +233,7 @@ SSP performs one Dijkstra per unit of flow, and flow value is bounded by the bud
 
 This is why the posting count barely matters: postings add edges, but augmentations are capped by the budget. Even the effort-quantisation resolution to the #167 conflict, which multiplies edges by the max effort units per posting (say 4), lands near 35 ms and stays polynomial.
 
-**Why SSP:** costs are all non-negative (`−log` of a probability ≤ 1), the graph is small and layered, and SSP with potentials is the simplest correct choice at this scale. Network simplex and cost-scaling are faster asymptotically and not worth the complexity for a few thousand nodes. Since costs are non-negative, **Bellman-Ford initialisation is unnecessary** — potentials start at zero and Dijkstra suffices from the first iteration.
+**Why SSP:** costs are all non-negative and bounded (`1 − P·decay ∈ [0,1]`), the graph is small and layered, and SSP with potentials is the simplest correct choice at this scale. Network simplex and cost-scaling are faster asymptotically and not worth the complexity for a few thousand nodes. Since costs are non-negative, **Bellman-Ford initialisation is unnecessary** — potentials start at zero and Dijkstra suffices from the first iteration.
 
 **Not Hopcroft-Karp, not Ford-Fulkerson.** Hopcroft-Karp solves maximum-cardinality bipartite matching, which is degenerate here (one candidate) and cannot express costs at all. Ford-Fulkerson solves max-flow without costs. Neither expresses the objective; both are recorded here so the choice is not relitigated.
 
