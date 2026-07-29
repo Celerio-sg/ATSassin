@@ -1,3 +1,11 @@
+> ## ⚠️ HISTORICAL — do not pick up work from this document
+>
+> Predates the 2026-07-29 architecture reset. Kept for context only. Parts of it plan work that is now **rejected** — notably Stage 3 DHT/P2P (#49) and crowd-sourced pooling (#105), both closed under [REJ-001](DECISIONS.md).
+>
+> Issue numbers here are stale. For current direction see [DECISIONS.md](DECISIONS.md), [ROADMAP.md](ROADMAP.md#the-critical-chain) and the tracking epic **#156**. Where this document disagrees with those, they win.
+
+---
+
 # Critical Chain Plan — Autonomous LoRA Sharing & Ecosystem
 
 > **Scope:** This document applies Critical Chain Project Management (CCPM) to the experimental autonomous LoRA-sharing roadmap and the broader ATSassin autonomous loop. It includes an adversarial red-team review, a dependency map, a sequenced plan, and GitHub issue tagging guidance.

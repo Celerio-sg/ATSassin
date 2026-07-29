@@ -7,7 +7,7 @@
 > | Claim in drafts | Reality |
 > |---|---|
 > | "~9.5 MB binary" | **10.96 MB**, measured on a clean `--release` build |
-> | "runs on 4 GB RAM" stated as fact | **Unvalidated target.** Never tested on 4 GB CPU-only hardware (#5/#57/#73) |
+> | "runs on 4 GB RAM" stated as fact | **Unvalidated target.** Never tested on 4 GB CPU-only hardware (live issue **#73**) |
 > | "runs entirely with local Ollama by default" | Testing to date has run against cloud Groq; local CPU-only behaviour is untested |
 > | Career-coach mode, community pooling, LoRA sharing in present tense | All unbuilt. Career coaching is Steps 2–3 of the critical chain; LoRA sharing is Stage 0–1 only, and Stage 3 (DHT/P2P) is **rejected** |
 >

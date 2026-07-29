@@ -1,3 +1,11 @@
+> ## ⚠️ HISTORICAL — do not pick up work from this document
+>
+> Predates the 2026-07-29 architecture reset. Kept for context only. Parts of it plan work that is now **rejected** — notably Stage 3 DHT/P2P (#49) and crowd-sourced pooling (#105), both closed under [REJ-001](DECISIONS.md).
+>
+> Issue numbers here are stale. For current direction see [DECISIONS.md](DECISIONS.md), [ROADMAP.md](ROADMAP.md#the-critical-chain) and the tracking epic **#156**. Where this document disagrees with those, they win.
+
+---
+
 # Design: Autonomous Closed-Loop Job & Income Optimization for ATSassin
 
 **Status:** Reviewed and revised — see §0 before reading the rest of this document  

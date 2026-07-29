@@ -23,14 +23,33 @@ Thanks for taking the time to contribute. This project exists to make good job-s
 
 ATSassin is a **local-first, privacy-first, job-search assistant** that runs as a single Rust binary. It helps people discover, evaluate, and tailor applications without selling their data or requiring expensive subscriptions.
 
-Right now we are also building an **experimental autonomous LoRA-sharing ecosystem** so users can benefit from small, community-created adapters without touching a blockchain, a SaaS, or another user's API credentials. If you care about local AI, privacy, or democratizing access to better job outcomes, your skills are probably useful here.
+The current focus is the four-step critical chain: repair the foundation, then build the **evidence**, **calibration** and **allocation** layers that turn a ranked list into an allocated slate. See [`docs/INFLECTION_ARCHITECTURE.md`](docs/INFLECTION_ARCHITECTURE.md) for why.
 
-Key documents to understand the direction:
+A smaller, experimental **LoRA-sharing** track also exists (Stages 0–1 only: local adapter generation and a read-only HTTP registry). Its later stages were rejected — see below.
 
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — known gaps and the short-term roadmap
-- [`docs/DESIGN_autonomous_loop.md`](docs/DESIGN_autonomous_loop.md) — architecture and design principles for the autonomous loop
-- [`docs/CRITICAL_CHAIN_PLAN.md`](docs/CRITICAL_CHAIN_PLAN.md) — how the LoRA-sharing work is sequenced and why
-- [`docs/CATEGORY_LEADERSHIP_ROADMAP.md`](docs/CATEGORY_LEADERSHIP_ROADMAP.md) — where the project is fragile and how to make it structurally better
+### Current documents
+
+| Document | What it is |
+|---|---|
+| [`docs/INFLECTION_ARCHITECTURE.md`](docs/INFLECTION_ARCHITECTURE.md) | Why the architecture is what it is |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | ADR-001…009 and **REJ-001…009** — read the rejections before proposing |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md#the-critical-chain) | The build order |
+| [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) | How your PR is verified |
+| [`docs/design/`](docs/design/) | Per-layer implementation specs |
+
+### ⚠️ Historical documents — plans, not current direction
+
+These predate the 2026-07-29 architecture reset. They are kept for context and **must not be used to pick up work** — several plan things that are now rejected:
+
+| Document | Why it is stale |
+|---|---|
+| `docs/CRITICAL_CHAIN_PLAN.md` | Sequences the LoRA chain **including Stage 3 DHT/P2P (#49), which is rejected** ([REJ-001](docs/DECISIONS.md)) |
+| `docs/AUDIT_DESIGN_GAPS.md` | Its issue numbers are stale; crowd-sourcing (#105) is rejected |
+| `docs/CATEGORY_LEADERSHIP_ROADMAP.md` | Gap numbering predates the current tracker |
+| `docs/DESIGN_autonomous_loop.md` | Phase structure superseded by the critical chain |
+| `docs/REDTEAM_AUDIT_COMBINED.md`, `docs/FIX_PLAN_*.md`, `docs/UAT_REPORT_*.md` | Point-in-time reports; their `#N` are internal finding numbers, not GitHub issues |
+
+**If a historical document disagrees with `DECISIONS.md` or the tracker, they win.** When in doubt, start at [#156](https://github.com/Celerio-sg/ATSassin/issues/156).
 
 ---
 
@@ -119,13 +138,21 @@ If an issue interests you but is unclear, **ask before coding**. A short questio
 
 These workstreams can be developed in parallel — they are not blocked by each other, although some depend on shared building blocks (e.g. PII scrubbing gates any shared data). See `docs/AUDIT_DESIGN_GAPS.md` §Parallel-track notes and `docs/CRITICAL_CHAIN_PLAN.md` for dependencies and sequencing.
 
-| Track | Label | Entry point | Current owner |
+The four **milestones** are the unit to work against — they mirror the critical chain and each issue is assigned to one.
+
+| Track | Milestone / label | Entry point | Blocked? |
 |---|---|---|---|
-| **PII / privacy** | `area:pii` | `src/engine/pii_scrubber.rs` | TBD — see `CODEOWNERS` |
-| **Career coach** | `area:coach` | `docs/ROADMAP.md` §Next — Career Coaching | TBD — see `CODEOWNERS` |
-| **Crowd-sourcing** | `area:crowdsource` | `docs/ROADMAP.md` §Stage 1b | TBD — see `CODEOWNERS` |
-| **AI exposure** | `area:exposure` | `docs/AUDIT_DESIGN_GAPS.md` §1.4 | TBD — see `CODEOWNERS` |
-| **Autonomous LoRA sharing** | `design:autonomous-loop` | `docs/CRITICAL_CHAIN_PLAN.md` | `@simonbrender` |
+| **Foundation repair** | `step-0-foundation` | [#156](https://github.com/Celerio-sg/ATSassin/issues/156) → Step 0 | **No — start here** |
+| **Evidence layer** | `layer-1-evidence` | [`docs/design/EVIDENCE_LAYER.md`](docs/design/EVIDENCE_LAYER.md) | Yes — needs #142, #144, #145 |
+| **Calibration layer** | `layer-2-calibration` | [`docs/design/CALIBRATION_LAYER.md`](docs/design/CALIBRATION_LAYER.md) | Yes — needs Layer 1 |
+| **Allocation layer** | `layer-3-allocation` | [`docs/design/ALLOCATION_LAYER.md`](docs/design/ALLOCATION_LAYER.md) | Yes — needs Layer 2 |
+| **Distillation** | `area:distillation` | #109–#114 | No — independent of the chain |
+| **LoRA sharing (Stages 0–1 only)** | `design:autonomous-loop` | #46, #47 | No — but below the chain in priority |
+| **Reliability / hygiene** | `area:reliability` and friends | #69–#83 | No |
+
+**Two tracks that appeared in earlier versions of this table are gone:** `area:crowdsource` (#105 rejected — [REJ-001](docs/DECISIONS.md)) and `area:exposure` (never implemented; `src/engine/ai_exposure.rs` does not exist). Do not start work on either.
+
+Everything in **Step 0 is unblocked and can start today.** Layer work is genuinely blocked, not just deprioritised — random job identity and fabricated posting dates make every downstream measurement untrustworthy, so building on top of them produces work that has to be redone.
 
 ### Becoming an area lead
 

@@ -66,7 +66,7 @@ The need is not for "better ATS keyword optimization." It is for **continuous ea
 | Dimension | Current state |
 |-----------|--------------|
 | Binary size | 10.96 MB (measured on a clean `--release` build, 2026-07-29) |
-| Hardware floor | 4 GB RAM, CPU-only (target — see open issue #5) |
+| Hardware floor | 4 GB RAM, CPU-only (**target, never validated** — live issue #73; #5/#57 closed as duplicates) |
 | Scraping surfaces | 11+ (LinkedIn, Seek, Greenhouse × 44 companies, HN, Reddit, RemoteOK, Wellfound, WeWorkRemotely, Indeed, Ashby, Lever) |
 | Evaluation rigor | 6-dimension rubric (role match, north-star alignment, compensation, cultural signals, red flags, global fit) |
 | TUI capability | Full terminal dashboard: infer, scan, evaluate, tailor, pipeline tracking |
@@ -669,7 +669,7 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 - Salary/review aggregation: anonymized salary data and "post to avoid" flags, signed by author key, ranked by observed quality.
 - Anti-spam: claims treated as claims until corroborated across multiple independent instances.
 
-**Issue map:** #105
+**Issue map:** #105 — **CLOSED as rejected.** Superseded by the extraction ladder (#147, #173, #148, #149, #161), which derives sources rather than pooling them.
 
 ---
 
@@ -857,19 +857,19 @@ Distillation cluster (#109–#114), LoRA Stages 0–1 (#45, #46, #47), onboardin
 
 ### Recent Fixes (Applied in Current Session)
 
-**Note:** These code fixes have been applied to the binary and are working, but the corresponding GitHub issues have not yet been closed (issues #63, #64, #65, #66 and duplicates #84, #85, #86 remain open in the tracker awaiting cleanup). See issue #140 for the consolidation tracking.
+**Status corrected 2026-07-29.** All issues referenced here are now **closed**; the consolidation tracked by #140 is complete. Three of the four "fixed" claims below were also found to be **overstated** by the adversarial review — the corrections are in the table.
 
 | Item | Status | Issue(s) |
 |------|--------|----------|
-| Distillation conversion scripts — real ONNX, GGUF, OpenVINO scripts, not stubs | Code fixed, issue pending closure | #63, #84 |
-| Lightning AI client — real training client, not stub | Code fixed, issue pending closure | #64, #85 |
-| Daemon as full orchestrator (scan/evaluate/rank/tailor/follow-ups/IMAP) | Code fixed, issue pending closure | #65, #86 |
-| PII scrubber — integrated into distillation export pipeline | Code fixed, issue pending closure | #66, #87 |
+| Distillation conversion scripts | ⚠️ **Partly fixed.** ONNX and OpenVINO are real. **Unsloth is a placeholder comment** with an unused import (`distillation.rs:419-421`), and the GGUF script probes a filename llama.cpp renamed while passing an `--outtype` value that only accepts `f32/f16/bf16/q8_0` — the advertised Q4_K_M path cannot execute | #63, #84 (both closed) |
+| Lightning AI client | ⚠️ **Transport real, target unverified.** Endpoints are self-documented as guesses and use the OpenAI path shape. The 401 is a code defect — the user-id env var is never read | #64, #85 (closed); live: **#154** |
+| Daemon as full orchestrator | ✅ **Verified** — scan, prerank, evaluate, rank, tailor, follow-ups and IMAP sync all present. But it re-evaluates every job every tick because job identity is random (**#142**) | #65, #86 (both closed) |
+| PII scrubber in the distillation export | ❌ **Claim was false.** The gate does not cover the file uploaded off-device, and detectors are US-only | #66, #87 (closed); live: **#143**, **#81** |
 | Compute Broker — explicit `allow_paid` semantics, quota observation | Fixed | — |
 | Board-health canary — scheduled detection of scraper drift | Fixed | #68 (CI workflow) |
-| OpenSSL dependency — remove via `imap` crate `rustls` feature | Open | #67, #88 |
-| Low-spec hardware validation | Open | #5, #73, #94 |
-| Lightning AI 401 | Open | #6 |
+| OpenSSL dependency — still present via **three** paths, not just `imap` | Open | **#67** (#88 closed as duplicate) |
+| Low-spec hardware validation | Open | **#73** (#5, #57, #94 closed as duplicates) |
+| Lightning AI 401 — confirmed a **code defect**, not a credential issue | Open | **#154** (#6 closed) |
 
 ---
 
@@ -912,7 +912,7 @@ Distillation cluster (#109–#114), LoRA Stages 0–1 (#45, #46, #47), onboardin
 | **Binary size growth over time** | Low | Low | LTO + strip in release profile. Currently 10.96 MB (measured 2026-07-29). |
 | **Competitor closes gap on zero-token scanning** | Medium | Medium | Autonomous ATS detector (issue #116) is the durable moat — makes the directory self-maintaining. |
 | **PII leakage through shared adapters** | Low | Critical | PII scrubber implemented. Gate validates final output. Accept only safe formats (GGUF/Safetensors). |
-| **Low-spec hardware claim false** | Medium | High | Issue #5 tracks validation. Must test on real 4 GB CPU-only machine before declaring it proven. |
+| **Low-spec hardware claim false** | Medium | High | Issue **#73** tracks validation (#5/#57 closed as duplicates). Must test on real 4 GB CPU-only machine before declaring it proven. |
 | **Onboarding friction kills adoption** | Medium | High | Provider onboarding wizard (issue #51) is top priority. Must be trivial for first-time users. |
 
 ### Explicitly Out of Scope

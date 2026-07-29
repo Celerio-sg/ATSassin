@@ -61,7 +61,7 @@ Reframes #122, #133, #121, #106.
 
 ### Also open (independent of the chain)
 - Cloud-provider model tiering for `--preset` (gap #2), plus the `config.rs` tier-collapse bug that currently forces all three tiers to one model.
-- Low-spec hardware validation (#5/#57/#73) — the largest unbacked claim in the project.
+- Low-spec hardware validation — **#73** (#5 and #57 closed as duplicates). The largest unbacked claim in the project.
 
 ### Career Coaching — the destination (delivered by Steps 2 and 3)
 

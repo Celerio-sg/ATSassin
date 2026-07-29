@@ -132,7 +132,7 @@ The generic/late arm is deliberate. Without a control, a good callback rate is u
 
 ## Tier 5 — Hardware-floor validation (manual, release-gating)
 
-The "4 GB, CPU-only" claim has never been tested on 4 GB CPU-only hardware (issues #5/#57/#73). It is currently the largest unbacked claim in the project, and it is load-bearing for the mission.
+The "4 GB, CPU-only" claim has never been tested on 4 GB CPU-only hardware (live issue **#73**; #5 and #57 closed as duplicates). It is currently the largest unbacked claim in the project, and it is load-bearing for the mission.
 
 Until validated, documentation must say **target**, not **verified** — the current `README`/`ROADMAP` phrasing and `PROMOTION_DRAFTS.md` overstate it.
 

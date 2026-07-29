@@ -39,6 +39,13 @@ jobs:
         run: cargo test --lib --test integration --test cli
       - name: CLI command docs coverage (issue #9)
         run: bash scripts/check_cli_docs.sh
+      # Catches stale/rejected issue pointers, broken doc links, drifted
+      # measured claims, and new ADR-002 fabrication sites. Every check here
+      # maps to a defect that actually shipped - see the module docstring.
+      - name: Docs consistency
+        run: python scripts/check_docs_consistency.py --with-tracker
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   windows-check:
     runs-on: windows-latest
