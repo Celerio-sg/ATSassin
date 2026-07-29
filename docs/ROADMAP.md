@@ -49,7 +49,7 @@ Closes #116, #58, #117, and **replaces** the maintained salary dataset in #119 �
 
 #### Step 2 — Calibration layer → [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md)
 
-Per-user empirical-Bayes conversion model fitted from data already captured (`edit_distance`, submission latency, pipeline/IMAP outcomes). Mandatory shrinkage toward published priors, interval reporting, and controllable-vs-structural factor decomposition.
+Per-user Bayesian (Beta-Binomial) conversion model fitted from data already captured (`edit_distance`, submission latency, pipeline/IMAP outcomes). Mandatory shrinkage toward published priors, interval reporting, and controllable-vs-structural factor decomposition.
 
 Reframes #115, #48, #132; #119 survives only as the prior table.
 

@@ -74,7 +74,9 @@ See [design/EVIDENCE_LAYER.md](design/EVIDENCE_LAYER.md).
 
 **Date:** 2026-07-29 · **Status:** Accepted
 
-Published funnel statistics enter the system as **prior distributions** for a per-user empirical-Bayes model, never as figures shown to the user as guidance. Personal rates are shrunk toward the prior in proportion to observation count, and reported as intervals.
+Published funnel statistics enter the system as **prior distributions**, never as figures shown to the user as guidance. Personal rates are shrunk toward the prior in proportion to observation count, and reported as intervals.
+
+The model is a **conjugate Beta-Binomial with an informative prior**. It is *not* empirical Bayes — that would estimate the hyperparameters from the data rather than take them from published research — and it is not hierarchical unless partial pooling across buckets is added later. Earlier drafts used both terms incorrectly; see [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md).
 
 Two constraints are mandatory, not optional:
 

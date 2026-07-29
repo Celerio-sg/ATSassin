@@ -500,7 +500,7 @@ When multiple sources claim a salary for the same role/region, average across th
 
 > **Now Layers 2 and 3, and this is the flagship.** The vision below is intact but was under-specified — "insight cards" and "preference challenges" had no mechanism behind them, so any confidence label they carried would itself have been fabricated. They now have one:
 >
-> - **Layer 2** (#150, #151): per-user empirical-Bayes conversion estimates with mandatory shrinkage and intervals, plus controllable-vs-structural attribution
+> - **Layer 2** (#150, #151): per-user Bayesian conversion estimates with mandatory shrinkage and intervals, plus controllable-vs-structural attribution
 > - **Layer 3** (#152, #153): the weekly allocated slate, and preference challenges as *solved counterfactuals* rather than heuristics
 >
 > **Blocking dependency:** the market-watch daemon (#121) cannot ship until #142 lands. Job IDs are currently random UUIDs, so the daemon re-evaluates every job on every tick at full LLM cost, indefinitely. Shipping continuous polling on that foundation ships unbounded silent spend. Specs: [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md), [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
@@ -831,7 +831,7 @@ Milestones in GitHub mirror these four groups. Tracking epic: **#156**.
 
 | Item | Issue | Size |
 |---|---|---|
-| Per-user empirical-Bayes conversion model | **#150** | L |
+| Per-user Bayesian (Beta-Binomial) conversion model | **#150** | L |
 | Controllable vs structural decomposition (safety requirement) | **#151** | M |
 | Reframed: outcome calibration #115, local estimator #48, match taxonomy #132, prior table #119 | | |
 
@@ -965,7 +965,7 @@ Step 1 — Evidence layer  [MILESTONE, blocked on #142/#144/#145]
              #68 drift canary (tier-fallthrough)
 
 Step 2 — Calibration layer  [MILESTONE, blocked on Step 1]
-├── #150  Per-user empirical-Bayes conversion model
+├── #150  Per-user Bayesian (Beta-Binomial) conversion model
 ├── #151  Controllable vs structural decomposition (safety requirement)
 └── reframed: #115 outcome calibration · #48 local estimator
              #132 match taxonomy · #119 prior table only

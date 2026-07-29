@@ -25,23 +25,57 @@ Submission latency is blocked on the Step 0 `posted_at` fix — with fabricated 
 
 ## Model
 
-A hierarchical Beta-Binomial per outcome transition. For transition *t* (applied→callback, callback→interview, interview→offer) and feature bucket *b*:
+> **Terminology correction (2026-07-29).** Earlier drafts, and several issue titles, call this *"hierarchical empirical-Bayes"*. **Both words were wrong** and a statistically literate contributor would have implemented the wrong thing.
+>
+> - **Empirical Bayes** estimates the prior hyperparameters *from the observed data*, usually by pooling across many units. Here they come from published literature and are fixed. That is **Bayesian inference with an informative prior** — a different method.
+> - **Hierarchical** means buckets share a hyperprior so a sparse bucket borrows strength from related ones. As specified below they are independent, so the model is **not hierarchical** either.
+>
+> The pooling described in *Optional: partial pooling* below is the thing that would make it genuinely hierarchical, and it is worth doing — but it is an extension, not what the base model is. Where issue titles still say "empirical-Bayes", read "Bayesian with an informative prior".
+
+Conjugate Beta-Binomial per outcome transition and feature bucket. For transition *t* (applied→callback, callback→interview, interview→offer) and bucket *b*:
 
 ```
-θ_{t,b} ~ Beta(α_{t,b}, β_{t,b})
-k successes out of n trials observed locally
-posterior: Beta(α + k, β + n − k)
+prior:      θ_{t,b} ~ Beta(α_{t,b}, β_{t,b})
+observed:   k successes out of n trials, locally
+posterior:  θ_{t,b} | data ~ Beta(α_{t,b} + k,  β_{t,b} + n − k)
 ```
 
-Priors come from published funnel research, encoded as a static table. **This is the only legitimate use of the published benchmarks** — they are prior parameters, never figures shown to the user as guidance. That table is what remains of issue #119 after Layer 1 supersedes it as a salary source.
+Priors come from published funnel research, encoded as a static table (#176). **This is the only legitimate use of the published benchmarks** — they are prior parameters, never figures shown to the user as guidance.
 
-Prior strength is deliberately weak (suggest α+β ≈ 20 effective observations) so genuine personal signal overtakes it within a realistic search, but a user with four applications is not handed a number driven entirely by their own noise.
+Prior strength is `α + β`, in units of effective prior observations. Set `α = p̄(α+β)` and `β = (1 − p̄)(α+β)` where `p̄` is the published rate for that bucket, so the prior mean is exactly `p̄`.
+
+**`α+β` is a tunable parameter, not a constant** ([ADR-008](../DECISIONS.md)). A value near 20 makes personal signal overtake the prior within a realistic search while stopping four applications from driving the number; the value must be documented and adjustable, and #176 owns deriving it rather than asserting it.
 
 ### Shrinkage is mandatory
 
-A user with 12 applications and 1 callback has almost no signal. Reporting "your callback rate is 8.3%" from that is a random number in a confident font.
+This is not an extra step — it falls out of the conjugate update. The posterior mean is a precision-weighted average of the prior mean and the observed rate:
 
-The model reports the **posterior interval**, and the CLI/TUI must render the interval, never a bare point estimate. Below a configurable observation floor the output says plainly that the estimate is prior-dominated and not yet personal.
+```
+E[θ | data] = (α + k) / (α + β + n)
+            = w · p̄  +  (1 − w) · (k/n),     where w = (α+β) / (α+β+n)
+```
+
+So `w` is the share of the answer still coming from the prior. With `α+β = 20` and `n = 12`, `w = 0.63` — **most of that number is still the literature, not the user.**
+
+That gives a principled definition rather than an arbitrary threshold:
+
+> **`prior_dominated` is true when `w > 0.5`, i.e. when `n < α + β`.**
+
+Use that, not a separately configurable floor — a hand-picked floor would be exactly the asserted constant ADR-008 bans, and this one is derived from the model.
+
+### Interval method — specify it, do not leave it to the implementer
+
+Report the **equal-tailed 90% credible interval**: the 5th and 95th percentiles of the posterior Beta, via the inverse regularised incomplete beta function.
+
+Equal-tailed rather than highest-density: for small `k` the posterior is strongly skewed and the two differ materially, so leaving the choice open makes two correct implementations disagree. Equal-tailed is also cheap and monotone in the data, which the invariant tests rely on.
+
+The model reports that interval, and the CLI/TUI must render it — never a bare point estimate.
+
+### Optional: partial pooling (this is what "hierarchical" would mean)
+
+Buckets are related — deep/light/generic tailoring are points on one axis. A genuinely hierarchical model puts a hyperprior over the bucket-level `θ` so a sparse bucket borrows strength from its neighbours, which materially helps early in a search when every bucket is thin.
+
+Worth doing, but it is **not** the base model and must not be described as though it is. Defer until the base model has real data; revisit under #150.
 
 ```
 Callback rate (deeply tailored, <7d):  4% – 19%   (n=12, prior-dominated)
