@@ -18,7 +18,7 @@ This layer is not a performance optimisation. It is the evidence base. Layer 2 c
 | #117 — visa / language / experience restriction parser | Tier 4 structured fields |
 | Fabricated `posted_at` (ADR-002) | Tier 2 / Tier 4 authoritative `datePosted` |
 
-The salary point is the one worth dwelling on, because it **replaces** planned work rather than accelerating it. Issue #119 proposed building and maintaining a static JSON of role × region × seniority compensation baselines. That artifact needs perpetual curation, has no per-posting provenance, and is stale the day it ships. Tier 2/4 gives compensation **from the employer, for that exact posting, with perfect provenance and zero maintenance**. The maintained dataset survives only as a *prior* for Layer 2 (see [CALIBRATION_LAYER.md](CALIBRATION_LAYER.md)), never as a user-facing per-job number.
+The salary point is the one worth dwelling on, because it **replaces** planned work rather than accelerating it. Issue #119 proposed building and maintaining a static JSON of role × region × seniority compensation baselines. That artifact needs perpetual curation, has no per-posting provenance, and is stale the day it ships. Tier 2/4 gives compensation **from the employer, for that exact posting, with perfect provenance and zero maintenance**. The maintained salary dataset (#119) is superseded outright. The Layer 2 conversion prior table is a **separate artifact, #176** — not #119 (see [CALIBRATION_LAYER.md](CALIBRATION_LAYER.md)), never as a user-facing per-job number.
 
 ## The ladder
 

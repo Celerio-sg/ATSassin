@@ -235,7 +235,7 @@ Solving for minimum cost yields the optimal *slate*, and each structural element
 - **Edge costs from Layer 2** mean the objective is the user's own measured conversion probabilities, not industry benchmarks.
 - **Age decay** operationalises the <7-day review-bandwidth window as a real term in the objective rather than a tip in the docs.
 
-Greedy ranking is provably suboptimal here, and it is worth being precise about why: postings expire at different rates (a 6-day-old posting must be acted on now, a 1-day-old one can wait a cycle without loss), effort is a shared renewable resource, and marginal value is non-linear in role concentration. Sorting by score cannot express any of that.
+**An earlier draft claimed greedy ranking is provably suboptimal here. That was wrong** — the specified constraint set is a truncated partition matroid with a modular objective, which greedy solves exactly, and the "a 1-day-old posting can wait a cycle" argument needs a multi-period model that does not exist. The flow formulation earns its place because effort weighting and posting liveness will break the matroid, not because sorting fails today.
 
 **On implementation cost:** min-cost max-flow over a few thousand nodes is *milliseconds*, single-threaded, in stock Rust. Successive shortest paths is ~200 lines, or `petgraph` — already a candidate dependency — provides it. No arena, no CSR, no lock-free structures, no new heavy dependency. The hardware floor is untouched.
 
@@ -275,7 +275,7 @@ The dependency order is forced — each step is worthless without its predecesso
 
 **Step 1 — Evidence layer.** Tiered extraction ladder behind the `JobSource` trait (#130). Delivers real `datePosted` and real compensation. Closes #116, #119, #58, #117.
 
-**Step 2 — Calibration layer.** Compute submission latency and tailoring depth from data already captured. Empirical-Bayes conversion model with mandatory shrinkage, interval reporting, and controllable/structural decomposition. Closes #115.
+**Step 2 — Calibration layer.** Compute submission latency and tailoring depth from data already captured. Bayesian (Beta-Binomial) conversion model with mandatory shrinkage, interval reporting, and controllable/structural decomposition. Closes #115.
 
 **Step 3 — Allocation layer.** Min-cost flow slate generation with effort budget, diversification caps, and age decay. Counterfactual re-solve for preference challenges. Closes #122, reframes #121.
 

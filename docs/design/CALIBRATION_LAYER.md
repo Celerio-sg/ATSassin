@@ -129,7 +129,7 @@ Per [REJ-008](../DECISIONS.md#rej-008--acting-on-structural-bias-data-as-advice)
 
 **Role fit.** The existing `overall_score`. Bucketed by quantile.
 
-Issue #132 proposed fixed match weights (exact 1.0 / adjacent 0.7 / transferable 0.4). Keep the **taxonomy** as a feature extractor; delete the **constants**. Those weights are exactly the class of asserted magic number ADR-002 bans — they must be fitted from outcomes, with intervals, or not claimed.
+Issue #132 proposed fixed match weights (exact 1.0 / adjacent 0.7 / transferable 0.4). Keep the **taxonomy** as a feature extractor; delete the **constants**. Those weights are exactly the class of asserted magic number **ADR-008** bans (not ADR-002, which is about missing data — an earlier draft cited the wrong rule) — they must be fitted from outcomes, with intervals, or not claimed.
 
 ## Outputs
 
@@ -153,7 +153,7 @@ pub struct ConversionEstimate {
 
 - **#115** (calibrate against outcomes) — the data flow is right; the target changes from ranking distilled models to fitting this model. The community-registry half is dropped.
 - **#48** (Proof-of-Quality reputation) — its estimator inputs are literally this feature set. Reframed to a purely local estimator; anonymised vote publishing is dropped (it is an outbound data path, which Step 0 is closing).
-- **#119** — survives only as the prior table.
+- **#119** — **not** the prior table. It is a salary dataset, superseded by Layer 1. The conversion prior table is **#176**.
 - **#132** — taxonomy retained, constants deleted.
 
 ## Acceptance criteria

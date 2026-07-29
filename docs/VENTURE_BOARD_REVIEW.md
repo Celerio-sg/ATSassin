@@ -679,7 +679,7 @@ Close the recommendation-to-offer loop: correlate model quality scores with actu
 
 > **Now delivered by Layer 3.** This dimension was previously "identified as a gap, not yet filed". It is the **allocation layer**: the diversification constraint in the min-cost flow (#152) is what mechanically surfaces adjacent opportunities, and the counterfactual re-solve (#153) is what quantifies them. See [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
 >
-> **One correction carried over from the agnosticism review (#158):** adjacency is a property of the profile, not a universal good. Generalists have high adjacency and benefit from breadth; licensed specialists (clinicians, tax attorneys, pilots) have near-zero legitimate adjacency, and early-career candidates are often harmed by breadth that reads as unfocused. The diversification cap is **derived from the profile's own archetype clustering, and a cap of 1 — no diversification — must be reachable.** "Awareness expansion" that pushes a specialist sideways is a defect, not a feature.
+> **One correction carried over from the agnosticism review (#158):** adjacency is a property of the profile, not a universal good. Generalists have high adjacency and benefit from breadth; licensed specialists (clinicians, tax attorneys, pilots) have near-zero legitimate adjacency, and early-career candidates are often harmed by breadth that reads as unfocused. The diversification cap is **derived from the profile's own archetype clustering**, and *no* diversification must be reachable — which is a per-family cap **equal to the budget**, not a cap of 1. (A cap of 1 permits one application per family and therefore forces *maximum* spread; an earlier draft had this backwards.) "Awareness expansion" that pushes a specialist sideways is a defect, not a feature.
 
 **Current state:** Specified, not yet built. Tracked as #152 and #153.
 
@@ -833,7 +833,7 @@ Milestones in GitHub mirror these four groups. Tracking epic: **#156**.
 |---|---|---|
 | Per-user Bayesian (Beta-Binomial) conversion model | **#150** | L |
 | Controllable vs structural decomposition (safety requirement) | **#151** | M |
-| Reframed: outcome calibration #115, local estimator #48, match taxonomy #132, prior table #119 | | |
+| Reframed: outcome calibration #115, local estimator #48, match taxonomy #132, conversion prior table **#176** (not #119, which is a salary dataset) | | |
 
 #### Step 3 — Allocation layer · *blocked on Step 2*
 
@@ -968,7 +968,7 @@ Step 2 — Calibration layer  [MILESTONE, blocked on Step 1]
 ├── #150  Per-user Bayesian (Beta-Binomial) conversion model
 ├── #151  Controllable vs structural decomposition (safety requirement)
 └── reframed: #115 outcome calibration · #48 local estimator
-             #132 match taxonomy · #119 prior table only
+             #132 match taxonomy · #176 conversion prior table (#119 superseded)
 
 Step 3 — Allocation layer  [MILESTONE, blocked on Step 2]
 ├── #152  Min-cost max-flow slate generation

@@ -13,7 +13,7 @@ This is the inflection. Everything below it is infrastructure for this output.
 
 The user can only make a finite number of genuinely-tailored applications per period. The question is which subset.
 
-**Be precise about what this buys, because an earlier draft of this section overclaimed.** Under the constraint set as specified — a budget `B`, a per-family cap, and one application per posting — the feasible sets form a *truncated partition matroid* and the objective is *modular* (a sum of independent per-posting terms). Max-weight independent set in a matroid is solved **exactly by greedy**: sort by weight, take if feasible. So for the constraints listed here, **sorting by `P·decay` and taking greedily subject to the family caps is optimal**, and a flow solver is machinery for a problem a sort already solves.
+**Be precise about what this buys, because an earlier draft of this section overclaimed.** Under the constraint set as specified — a budget `B`, a per-family cap, and one application per posting — the feasible sets form a *truncated partition matroid* and the objective is *modular* (a sum of independent per-posting terms). Max-weight independent set in a matroid is solved **exactly by greedy**: sort by weight, take if feasible. So for the constraints listed here, **sorting by `P·decay` and taking greedily subject to the family caps — stopping once `P·decay ≤ P_min` — is optimal**, and a flow solver is machinery for a problem a sort already solves.
 
 Three claims an earlier draft made for the solver, and what is actually true:
 
@@ -50,9 +50,11 @@ The literature's tailoring-depth advantage is a *rate*, not a strategy. Expected
 | **Selective** | Maximise P(offer) on few, high-fit applications | Small slate, deep tailoring, high fit floor |
 | **Throughput** | Maximise P(≥1 offer soon) under time pressure | Larger slate, tailoring depth traded against count |
 
-The solver handles both — it is the *same* min-cost flow with a different source capacity and fit floor. **The tool must not moralise about which regime the user is in.** Someone who needs income in three weeks is not doing it wrong; they have a different objective function, and telling them to make "one good move" would be advice masquerading as optimisation.
+⚠️ **These two rows do not currently state different objectives, and the claim below is wrong.** "Maximise P(offer)" on a slate *is* `P(≥1 offer)` — an offer from any member is an offer. And switching from `E[#callbacks]` to `P(≥1)` is a change of **cost function** (`1−p` → `log(1−p)`), not of capacity and floor — with the added problem that `log(1−p)` is negative and the construction forbids negative costs.
 
-### Diversification cap — derived from adjacency, and legitimately 1
+What the solver genuinely handles with capacity and floor alone is **the same objective at different scales**: a larger budget and a lower `P_min` for the throughput regime. That is still a real and useful distinction, and it is what the tool must not moralise about. Whether `P(≥1 offer)` is worth supporting as a separate objective is **open**, and would require reworking the cost sign convention. **The tool must not moralise about which regime the user is in.** Someone who needs income in three weeks is not doing it wrong; they have a different objective function, and telling them to make "one good move" would be advice masquerading as optimisation.
+
+### Diversification cap — derived from adjacency; *no* diversification is `cap = B`
 
 The cap must be **derived from the profile's actual adjacency structure**, not assumed. Adjacency availability varies enormously:
 
@@ -74,6 +76,8 @@ The cap must be **derived from the profile's actual adjacency structure**, not a
 **"No diversification" is `cap = B`, not `cap = 1`.** That value must be reachable, because pushing a specialist toward adjacent families is actively harmful and pushing an early-career candidate to spread thin works against them.
 
 Derive the cap from the role-archetype inference already in the pipeline, in the correct direction: **tightly clustered archetypes mean low adjacency, so the cap should loosen toward `B`** (concentrate). Widely spread archetypes mean high adjacency, so the cap can tighten (explore). Do not hardcode either end.
+
+**Both ends need a guard, not just the specialist end.** A feasibility floor is required: **`cap ≥ ⌈B / F⌉`** where `F` is the number of families holding postings above the floor. Without it the generalist end silently under-fills — 6 viable archetypes with `cap = 1` and `B = 7` caps flow at 6 and dumps a budget unit into slack even when an excellent 7th posting exists in an already-used family. That is the same harm as the specialist case, on the other boundary.
 
 ## Formulation
 
@@ -107,12 +111,16 @@ Two successive drafts got this wrong. The history is worth keeping because both 
 | Objective | Correct edge cost |
 |---|---|
 | `E[#callbacks] = Σ pᵢ` ← **what we want** | `1 − pᵢ` (or any `C − pᵢ`) |
-| `P(≥1 callback)` | `log(1 − pᵢ)` |
+| `P(≥1 callback)` | `log(1 − pᵢ)` — ⚠️ **negative for all `p > 0`**, so it violates the `cost ∈ [0,1]` assertion and voids the no-Bellman-Ford argument. Do not adopt without reworking both |
 | `P(all succeed)` | `−log pᵢ` ← draft 2 |
 
 **Use `cost = 1 − P(callback)·decay(age)`.** Since `P·decay ∈ [0,1]`, the cost is in `[0,1]`: non-negative (so Dijkstra needs no Bellman-Ford init), bounded (no infinities), and minimising the total maximises `Σ Pᵢ·decayᵢ`, which **is** expected callbacks and is directly readable off the solution.
 
 Age direction still holds: fresh `1 − 0.10(1.0) = 0.90` beats stale `1 − 0.10(0.3) = 0.97`.
+
+> **Be precise about what this change does and does not do.** Under the *current* constraint set it changes **no slate at all**. Both costs are `Σ f(p)` with `f` strictly decreasing, so the inclusion test and the greedy order are identical — and over a matroid, identical order plus identical threshold gives the identical selected set. A brute-force sweep over 4,000 random instances found **zero** differing slates.
+>
+> What it actually fixes: the **reported objective**, which was in nats and is now in callbacks; the `P_floor`/`τ` inversion; and the behaviour once #167's effort weighting lands, where magnitudes rather than order begin to matter. **Do not assume the slate semantics moved — they did not.**
 
 **This also removes a hole the log form had.** With `τ = −log(P_min)` and a `P_floor = 1e-6` clamp, any `P_min < 1e-6` gave `τ > 13.8`, at which point clamped **zero-probability postings became cheaper than slack and were selected**. In the linear form `τ = 1 − P_min` and both sit in `[0,1]`, so the ordering cannot invert.
 
@@ -127,14 +135,18 @@ Min-cost **max**-flow maximises flow *value* first, then minimises cost among th
 | `source → sink` ✗ | `B` (to user) + `B` (to slack) = **2B** | 2B | The solver *must* achieve 2B, so it pushes B through postings **and** B through slack. The posting path saturates anyway — every posting is selected regardless of cost, and the slack accomplishes nothing |
 | `user → sink` ✓ | **B** | B | The solver distributes B units between posting paths and slack, choosing whichever is cheaper per unit |
 
-Worked example — budget `B = 5`, `τ = 2.996` (`P_min = 0.05`), posting costs `[1.2, 1.8, 4.5, 5.0, 6.1]`:
+Worked example — budget `B = 5`, `P_min = 0.08` so `τ = 0.92`, with `P·decay` values `[0.30, 0.25, 0.05, 0.02, 0.01]` giving costs `[0.70, 0.75, 0.95, 0.98, 0.99]`:
 
-- **Correct (`user → sink`):** postings at 1.2 and 1.8 are below `τ`; the remaining 3 units flow through slack. Total cost `1.2 + 1.8 + 3(2.996) = 11.99`. Forcing all five postings would cost `18.6`, so the solver correctly prefers to leave budget unspent. **Slate of 2.**
-- **Wrong (`source → sink`):** max flow is 10, forcing all 5 postings including the one at 6.1, plus 5 slack units. **Slate of 5, always.**
+- **Correct (`user → sink`):** the two costs below `τ` are selected; the remaining 3 units flow through slack. Total `0.70 + 0.75 + 3(0.92) = 4.21`, against `4.37` for forcing all five — so the solver correctly prefers to leave budget unspent. **Slate of 2**, expected callbacks `0.30 + 0.25 = 0.55`.
+- **Wrong (`source → sink`):** max flow is `2B`, forcing all 5 postings plus 5 slack units. **Slate of 5, always.**
 
 `τ` is the **reservation cost** — the price of *not* using a unit of budget. It is where the relevance floor lives, expressed inside the graph rather than as a pre-filter, and it must be user-visible and tunable: it is the knob that says "don't put things on my slate that aren't worth it."
 
-Set **`τ = 1 − P_min`** where `P_min` is the lowest callback probability the user considers worth an application. A posting is selected exactly when `1 − P·decay < 1 − P_min`, i.e. when `P·decay > P_min`. `P_min = 0` gives `τ = 1`, which is reachable — satisfying ADR-008's requirement that a fit floor of 0 be expressible.
+Set **`τ = 1 − P_min`** where `P_min` is the lowest callback probability the user considers worth an application. A posting is selected exactly when `1 − P·decay < 1 − P_min`, i.e. when `P·decay > P_min` — **strictly greater**.
+
+**Ties must break toward slack.** At `P_min = 0` a posting with `P·decay = 0` costs exactly `1`, which equals `τ`. Min-cost flow is indifferent at a tie, and the posting-id tie-break would resolve it toward the *postings* — producing a full slate of zero-probability applications. Invariant 2 as originally worded ("costs **above** `τ`") passes vacuously in that case, because `1` is not above `1`.
+
+Implement the slack edge as **strictly preferred at equal cost**, or equivalently set `τ = 1 − P_min − ε` for a small `ε`. `P_min = 0` remains reachable, satisfying ADR-008's requirement that a fit floor of 0 be expressible — it just must not select worthless postings.
 
 **Implementer's check:** with every posting cost above `τ`, the solver must return an **empty** slate. If it returns a full one, the slack is attached to the wrong node.
 
@@ -169,7 +181,14 @@ Everything a contributor needs, so the data structure and the details are not ch
 
 **Degenerate inputs.** The linear cost removes most of this class — `1 − P·decay` cannot be infinite or `NaN` for finite inputs, so there is nothing to floor from below. Two guards remain:
 
-- **Clamp `decay ≤ 1`.** A future-dated `datePosted` (scheduled publication, timezone skew, bad ATS data — all routine) gives `age < 0` and `decay = 0.5^(age/h) > 1`. If `P·decay > 1` the cost goes **negative**, and Dijkstra with zero-initialised potentials returns a wrong shortest path **silently**. Treat `age < 0` as `age = 0` (`decay = 1`) — a posting cannot be fresher than new. Worked case: `h = 7`, `age = −30`, `P = 0.10` → `decay = 19.5`, `P·decay = 1.95`, `cost = −0.95`.
+- **Clamp the `decay` OUTPUT, not the `age` input: `decay = min(decay, 1)`.** Clamping `age < 0` to zero is *not sufficient* — it closes only one of three paths to `decay > 1`:
+  | Path | Example | Caught by an age clamp? |
+  |---|---|---|
+  | Future-dated `datePosted` | `age = −30, h = 7` → `decay = 19.5` | yes |
+  | **Negative half-life** | `age = 8, h = −7` → `decay = 2.21` | **no** — `age` is positive |
+  | **Zero half-life** | `age = 0, h = 0` → `0.5^(0/0)` = **NaN** | **no** |
+
+  `h` is a *fitted* parameter (derived once Layer 2 has data), so a bad fit reaching the solver is a live path, not a hypothetical. **Validate `h > 0` and finite at the point it is set**, and clamp `decay` itself. Worked case: `h = 7`, `age = −30`, `P = 0.10` → `decay = 19.5`, `P·decay = 1.95`, `cost = −0.95`.
 - **Clamp `P ≤ 1`.** A miscalibrated posterior should never exceed 1, but clamp rather than trust it — same negative-cost consequence.
 
 **Assert `cost ∈ [0,1]` before it enters the solver.** That single assertion catches both, and would have caught the negative-cost path immediately.
@@ -196,7 +215,7 @@ Neither was caught by reading. Both are caught immediately by a numeric test. **
 | # | Invariant | Why it catches a real error |
 |---|---|---|
 | 1 | Two postings identical except age → the **younger** is selected | Catches the cost-function inversion |
-| 2 | All posting costs above `τ` → slate is **empty** | Catches slack misattachment |
+| 2 | All posting costs **at or above** `τ` → slate is **empty** | Catches slack misattachment. "At or above" matters: at `P_min = 0` a worthless posting costs exactly `τ`, and a strict-inequality test passes vacuously |
 | 3 | All posting costs below `τ`, more postings than budget → slate size **equals budget** | Catches slack starving the posting path |
 | 4 | Postings in one family exceeding its cap → selection **stops at the cap**, remainder goes to other families or slack | Catches unenforced diversification |
 | 5 | Same input twice → **byte-identical** slate | Catches non-deterministic tie-breaking |
@@ -220,7 +239,7 @@ Three ways out, in preference order:
 
 ## Implementation
 
-Successive shortest paths with potentials (Bellman-Ford init, then Dijkstra). Roughly 200 lines, or `petgraph` — note it is **not currently a dependency**, so adding it is a real decision, not a free one.
+Successive shortest paths with potentials. Roughly 200 lines, or `petgraph` — note it is **not currently a dependency**, so adding it is a real decision, not a free one.
 
 **Complexity, derived rather than asserted.** With 5,000 postings and ~30 archetypes:
 
@@ -229,7 +248,7 @@ V = 1 source + 1 user + 30 archetypes + 5000 postings + 1 sink  ≈ 5,033
 E = 1 + 1 (slack) + 30 + 5000 + 5000                            ≈ 10,032
 ```
 
-SSP performs one Dijkstra per unit of flow, and flow value is bounded by the budget `B` (≈7), **not** by the number of postings. So the work is `B · O(E log V)` ≈ `7 × 10,032 × 12.3` ≈ **0.9 M operations**, roughly **9 ms** in release Rust — about 12× inside the 100 ms acceptance criterion.
+SSP performs one Dijkstra per unit of flow, and flow value is bounded by the budget `B` (≈7), **not** by the number of postings. So the work is `B · O(E log V)` ≈ `7 × 10,032 × 12.3` ≈ **0.9 M operations**, roughly **9 ms** in release Rust — about 11× inside the 100 ms acceptance criterion.
 
 This is why the posting count barely matters: postings add edges, but augmentations are capped by the budget. Even the effort-quantisation resolution to the #167 conflict, which multiplies edges by the max effort units per posting (say 4), lands near 35 ms and stays polynomial.
 
@@ -245,10 +264,20 @@ The hardware floor is untouched: this adds no model, no index, and no persistent
 
 Falls out for free, and closes #122 far more credibly than the LLM-prompt approach currently specced.
 
-Re-solve with one constraint relaxed, diff the objective:
+**Diff the expected outcome, NOT the raw objective.** The objective is
 
 ```
-Current slate:                    1.2 expected interviews
+cost_total = B − Σ_selected P·decay − (B − |S|)·P_min
+```
+
+which contains `B`. So for a **budget** counterfactual the objective *grows* even as the outcome improves: budget 7 with `ΣP·decay = 1.2` gives `7 − 1.2 = 5.80`; budget 10 with `1.6` gives `10 − 1.6 = 8.40`. Diffing the objective reports **+2.60 — that raising the budget made things worse**, which is backwards, and budget change is a required counterfactual.
+
+Extract **`Σ_selected P·decay`** from each solve and diff *that*. It is the expected-callback total and is comparable across solves with different budgets.
+
+Re-solve with one constraint relaxed, then diff:
+
+```
+Current slate:                    1.2 expected callbacks
   + include remote-EU postings:   2.1  (+0.9)
   + raise budget 7 → 10/week:     1.6  (+0.4)
   + accept 6-month contracts:     1.4  (+0.2)
@@ -272,7 +301,7 @@ Not selected, and why:
   VP Sales · Globex       — posted 34d ago, decayed below threshold
   Head of BD · Initech    — below comp floor
 
-Expected outcome: 0.9 – 1.6 interviews  (n=12, prior-dominated)
+Expected outcome: 0.3 – 1.3 callbacks  (n=12, prior-dominated)
 ```
 
 The "not selected, and why" section is not a courtesy. It is the difference between a decision and an oracle, and it is what lets a user disagree with the tool on a specific ground rather than distrust it wholesale.

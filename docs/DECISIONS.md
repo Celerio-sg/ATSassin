@@ -81,7 +81,9 @@ The model is a **conjugate Beta-Binomial with an informative prior**. It is *not
 Two constraints are mandatory, not optional:
 
 - **Shrinkage.** A user with 12 applications and 1 callback has almost no signal. The model reports an interval and says plainly when it does not yet know.
-- **Controllable/structural decomposition.** Observed outcomes are decomposed into candidate-controllable factors (tailoring depth, submission latency, role fit) and structural factors (name-based screening bias, employment-gap filters, prior self-employment penalties, market tightness). **Only controllable factors may drive recommendations.** Structural factors are attributed explicitly to the user.
+- **Controllable/structural decomposition.** Observed outcomes are decomposed into candidate-controllable factors (tailoring depth, submission latency, role fit) and structural factors. **Only controllable factors may drive recommendations**, and structural factors are attributed explicitly to the user.
+
+  The structural list is **assumed incomplete and must never be enumerated from whoever is testing** — it includes age, caregiving and medical gaps, disability, work authorisation, language, credential-country recognition and gender, not just the four an earlier draft of this ADR listed. See [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md) for the current table and ADR-008 for why the short list was a defect.
 
 See [design/CALIBRATION_LAYER.md](design/CALIBRATION_LAYER.md).
 
@@ -97,7 +99,9 @@ The flagship output is a min-cost max-flow solution over the opportunity set —
 
 See [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
 
-**Why:** ranked lists are a commodity. The user's binding constraint is a finite budget of genuinely-tailored applications against a decaying opportunity set with non-linear marginal value across role families. Greedy ranking cannot express expiry, shared budget, or diversification, and is provably suboptimal under all three.
+**Why:** ranked lists are a commodity, and the user's binding constraint is a finite budget of genuinely-tailored applications against a decaying opportunity set.
+
+**Do not repeat the claim that "greedy is provably suboptimal".** Under the constraint set as currently specified the feasible sets form a truncated partition matroid with a modular objective, which greedy solves *exactly*. The flow formulation is justified because the constraint set will not stay a matroid — #167's effort weighting and posting liveness (#177) both break it — not because sorting fails today. **If effort weighting is descoped, greedy is the correct implementation and this layer should be simplified.** See [design/ALLOCATION_LAYER.md](design/ALLOCATION_LAYER.md).
 
 ---
 
@@ -249,7 +253,7 @@ Callback-penalty data for minority names, employment gaps, and prior self-employ
 
 **This table is a navigation aid, not a completeness proof.** An independent three-agent audit on 2026-07-29 tested it against the source documents and found it claimed more than it delivered: roughly 30 rows against ~120 discrete concepts across the three papers, **four factually wrong rows**, and several dispositions that pointed at issues whose content did not match the claim.
 
-The wrong rows are corrected below and the gaps they hid are now filed (#173–#179). The lesson is recorded rather than quietly fixed, because the failure mode generalises: **a traceability table is written by the same person who did the analysis, so it inherits their blind spots and then lends them false authority.** If you are checking whether something was considered, read the issue, not this row.
+The wrong rows have now been corrected **in the tables themselves** (an earlier pass listed them here but left the originals live), and the gaps they hid are filed as #173–#179. The lesson is recorded rather than quietly fixed, because the failure mode generalises: **a traceability table is written by the same person who did the analysis, so it inherits their blind spots and then lends them false authority.** If you are checking whether something was considered, read the issue, not this row.
 
 Corrections applied 2026-07-29:
 
@@ -271,7 +275,7 @@ Every substantive concept below, and where it landed.
 
 | Concept | Disposition |
 |---|---|
-| Funnel baseline conversion rates | Priors for the model — #150 |
+| Funnel baseline conversion rates | **#176** — the prior table artifact. #150 consumes it |
 | Tailoring-depth lift (1–3% → 8–15%) | Fitted feature — #150 |
 | Early submission velocity (<7 days) | Latency feature #150; age decay #152; real dates #149 |
 | **Keyword paradox** (AUC 0.558; density negatively correlated with output) | **#168** — separate filter-pass likelihood from fit |
@@ -292,13 +296,13 @@ Every substantive concept below, and where it landed.
 | Concept | Disposition |
 |---|---|
 | CNAME enumeration | #147 |
-| ATS JSON API endpoints | #130, #149 (tier 2) |
+| ATS JSON API endpoints | **#173** (Tier 2). #149 is Tier **4** (JSON-LD) |
 | `__NEXT_DATA__` SSR hydration | #148 |
 | Schema.org JSON-LD `JobPosting` | #149 — the universal tier |
 | **MinHash/LSH near-duplicate detection** | **#166** — adopted as SimHash at this scale (REJ-006) |
-| FastText / ONNX classification | #163 (embedding choice), #133 (segments) |
+| FastText / ONNX classification | **#163** (embedding choice) only. #133 explicitly excludes ML — it is regex keyword matching |
 | **zstd dictionary compression** | **#169** |
-| Local per-host rate limiting | #130 — enforced locally, never delegated |
+| Local per-host rate limiting | **#174**. #130 covers per-host *concurrency*, a different axis |
 | **ATS JSON endpoints (`content=true`, `mode=json`, `includeCompensation=true`, Workday)** | **#173** — Tier 2. Note #149 is Tier **4** (JSON-LD), not Tier 2 |
 | **Local per-host rate limiting (GCRA, local only)** | **#174** — the rejected distributed version had no successor |
 | **GDPR local case, retention, erasure, scraping legal test, anti-bot position** | **#175** |
@@ -315,7 +319,7 @@ Every substantive concept below, and where it landed.
 |---|---|
 | Bipartite matching → **min-cost max-flow** | #152 — reformulated; plain max-cardinality matching is degenerate for one candidate |
 | Counterfactual re-solve | #153 |
-| Diversification as capacity constraint | #152, derived from adjacency (#158) |
+| Diversification as capacity constraint | #152. The derivation from adjacency is an **open TODO** in #158, not settled |
 | Arena allocation, generational indices, CSR, epoch-based reclamation | ❌ REJ-004 |
 | Slot maps, ECS archetype graphs, hazard pointers | ❌ Same reasoning as REJ-004 (wrong scale) — named here because REJ-004's text omits them |
 | **Vector-backed index graphs (`usize` into `Vec`, not `Rc<RefCell<_>>`)** | **Adopted** as a coding convention — `design/ALLOCATION_LAYER.md` §Representation. Orthogonal to scale; costs nothing |
