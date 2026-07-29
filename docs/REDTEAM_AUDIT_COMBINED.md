@@ -298,7 +298,7 @@ These are not blockers but represent high-value extensions:
 | LO-5 | LOW | Disk space monitoring | #78 | Open |
 | LO-6 | LOW | Remove `.expect()` in HTTP clients | #79 | Open |
 | LO-7 | LOW | Structured error codes | #80 | Open |
-| LO-8 | LOW | PII scrubber edge cases | #81 | Open |
+| LO-8 | P0 | PII scrubber edge cases | #81 closed | ✅ Fixed with deterministic regional and false-positive fixtures |
 | LO-9 | LOW | Document env vars | #82 | Open |
 | LO-10 | LOW | Config backup/rollback | #83 | Open |
 | ST-1 | HIGH | Crowd-source role/salary/board knowledge | #105 | Open |

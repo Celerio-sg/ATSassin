@@ -14,7 +14,7 @@ But there are three defects that must be fixed before anything is built on top, 
 
 ## P0-1 — The PII gate does not cover the file that leaves the machine
 
-> **Resolution (2026-07-29): fixed by #143 (closed).** `ValidatedTrainingPayload` now owns the exact checked bytes, and `LightningClient::submit_training_job` cannot accept a raw path. The egress check runs after export and before the first network request, fails closed without candidate identity context, and creates no `*.flagged.jsonl` copy. The audit below is retained as the historical finding. Broader deterministic detector coverage remains open in #81 and is not claimed to be universal NER.
+> **Resolution (2026-07-29): fixed by #143 and #81 (closed).** `ValidatedTrainingPayload` now owns the exact checked bytes, and `LightningClient::submit_training_job` cannot accept a raw path. The egress check runs after export and before the first network request, fails closed without candidate identity context, and creates no `*.flagged.jsonl` copy. Deterministic detector fixtures now cover representative SG, UK, India, EU, and US shapes with false-positive controls. The audit below is retained as the historical finding; this is not a claim of universal NER.
 
 This is the most serious finding. In the only code path where user data egresses:
 

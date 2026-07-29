@@ -253,7 +253,7 @@ Use the persisted telemetry stream to improve toward smaller, user-specific mode
 - Validation fails closed before any HTTP request and does not retain a flagged copy
 - Context-aware preservation for target companies
 
-This is deterministic containment, not universal entity recognition. International address/phone/ID coverage and false-positive fixtures remain tracked by #81.
+This is deterministic containment, not universal entity recognition. Representative international address/phone/ID coverage and false-positive fixtures were completed when #81 closed; unsupported free-text identity still fails closed.
 
 Storage optimization:
 - Deduplicate prompts.

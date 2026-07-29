@@ -3,6 +3,8 @@
 //! Before any training data is shared via the community LoRA registry,
 //! all personally identifiable information must be removed. This module
 //! provides deterministic scrubbing of common PII patterns from text.
+//! It is deliberately not a universal named-entity recognizer: unsupported
+//! free-text identity must remain behind the fail-closed egress boundary.
 //!
 //! This is a **blocking prerequisite** for any LoRA sharing feature
 //! (CRITICAL_CHAIN_PLAN.md issue #46). Sharing a distilled model that
@@ -18,21 +20,61 @@ lazy_static::lazy_static! {
         r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
     ).expect("email regex must compile");
 
-    // Phone number patterns (US formats; expanded international coverage is
-    // tracked separately in issue #81).
-    static ref PHONE_RE: Regex = Regex::new(
-        r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"
-    ).expect("phone regex must compile");
+    // Extract broadly, then validate digit count and shape in
+    // `looks_like_phone`. Horizontal whitespace is intentional: candidates
+    // must never consume multiple JSONL lines.
+    static ref PHONE_CANDIDATE_RE: Regex = Regex::new(
+        r"(?:\+|00|\()?\d(?:[\d().\- \t]{5,}\d)"
+    ).expect("phone candidate regex must compile");
+
+    static ref DATE_LIKE_RE: Regex = Regex::new(
+        r"^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})$"
+    ).expect("date-like regex must compile");
 
     // Common company name patterns (capitalized words followed by Inc/Ltd/LLC/etc)
     static ref COMPANY_RE: Regex = Regex::new(
         r"[A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*(?:\s+(?:Inc\.?|Ltd\.?|LLC|Corp\.?|GmbH|Pty\.?|S\.A\.|B\.V\.))\.?"
     ).expect("company regex must compile");
 
-    // Address patterns (street addresses)
-    static ref ADDRESS_RE: Regex = Regex::new(
-        r"\d+\s+[A-Z][a-zA-Z0-9\s,]+?(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Place|Pl)"
-    ).expect("address regex must compile");
+    static ref SINGAPORE_ADDRESS_RE: Regex = Regex::new(
+        r"(?ix)\b(?:blk\s+)?\d{1,4}[A-Z]?\s+(?:[\p{L}\d][\p{L}\d.'-]*\s+){1,8}(?:road|rd|street|st|avenue|ave|drive|dr|lane|ln|crescent|close|walk|link|view|terrace)(?:\s+\d{1,3})?(?:\s*,\s*\#\d{1,3}-\d{1,4})?\s*,\s*singapore\s+\d{6}\b"
+    ).expect("Singapore address regex must compile");
+
+    static ref UK_ADDRESS_RE: Regex = Regex::new(
+        r"(?ix)\b\d{1,5}[A-Z]?\s+(?:[\p{L}\d][\p{L}\d.'-]*\s+){1,8}(?:street|road|avenue|lane|drive|close|way|place|crescent|terrace)\s*,\s*(?:[\p{L}][\p{L}.'-]*\s+){0,5}[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b"
+    ).expect("UK address regex must compile");
+
+    static ref INDIA_ADDRESS_RE: Regex = Regex::new(
+        r"(?ix)\b\d{1,5}[A-Z]?\s+(?:[\p{L}\d][\p{L}\d.'-]*\s+){1,8}(?:road|rd|street|st|avenue|ave|lane|drive|marg|nagar|layout)\s*,\s*(?:[\p{L}][\p{L}.'-]*\s*){1,5}\s*,\s*(?:[\p{L}][\p{L}.'-]*\s*){1,5}\s+\d{6}\b"
+    ).expect("India address regex must compile");
+
+    static ref EU_ADDRESS_RE: Regex = Regex::new(
+        r"\b\p{Lu}[\p{L}.'-]*(?:\s+[\p{L}][\p{L}.'-]*){0,7}\s+\d{1,5}[A-Za-z]?,\s*\d{4,5}\s+\p{Lu}[\p{L}.'-]*(?:\s+\p{Lu}[\p{L}.'-]*){0,2}\b"
+    ).expect("EU address regex must compile");
+
+    static ref LEADING_NUMBER_ADDRESS_RE: Regex = Regex::new(
+        r"(?ix)\b\d{1,6}[A-Z]?\s+(?:[\p{L}\d][\p{L}\d.'-]*\s+){1,8}?(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way|place|pl|crescent|close|walk|terrace|highway|hwy|marg|nagar|layout|strasse|straße|rue|via|calle)\b"
+    ).expect("leading-number address regex must compile");
+
+    static ref NRIC_FIN_RE: Regex = Regex::new(
+        r"(?i)\b[STFGM]\d{7}[A-Z]\b"
+    ).expect("NRIC/FIN regex must compile");
+
+    static ref US_SSN_RE: Regex = Regex::new(
+        r"\b\d{3}-\d{2}-\d{4}\b"
+    ).expect("US SSN regex must compile");
+
+    static ref LABELLED_ID_RE: Regex = Regex::new(
+        r"(?i)\b(?:nric|fin|passport|national\s+id|identity\s+card|aadhaar|aadhar|pan|social\s+security|ssn|national\s+insurance|ni\s+number|tax\s+id)\s*(?:number|no\.?|#)?\s*[:\-]?\s*[A-Z0-9][A-Z0-9 -]{3,22}[A-Z0-9]\b"
+    ).expect("labelled identity regex must compile");
+
+    static ref DOB_RE: Regex = Regex::new(
+        r"(?i)\b(?:date\s+of\s+birth|dob|born\s+on)\s*[:\-]\s*(?:\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})\b"
+    ).expect("date-of-birth regex must compile");
+
+    static ref SOCIAL_HANDLE_RE: Regex = Regex::new(
+        r"(?m)(?:^|[\s:,(])@[A-Za-z0-9_][A-Za-z0-9_.-]{1,29}\b"
+    ).expect("social handle regex must compile");
 
     static ref EXPLICIT_NAME_RE: Regex = Regex::new(
         r"(?im)^\s*name\s*[:\-]\s*(\S.*?)\s*$"
@@ -54,6 +96,10 @@ pub struct ScrubResult {
     pub addresses_removed: usize,
     /// Number of candidate identity terms removed
     pub identity_terms_removed: usize,
+    /// Number of national IDs, passport values, or DOB fields removed
+    pub identifiers_removed: usize,
+    /// Number of standalone social handles removed
+    pub social_handles_removed: usize,
 }
 
 /// Identity context used to make free-text redaction candidate-specific.
@@ -133,6 +179,8 @@ pub fn scrub_text(text: &str, context: &ScrubContext) -> ScrubResult {
     let mut companies_removed = 0;
     let mut addresses_removed = 0;
     let mut identity_terms_removed = 0;
+    let mut identifiers_removed = 0;
+    let mut social_handles_removed = 0;
 
     let mut identity_terms: Vec<_> = context.identity_terms.iter().collect();
     identity_terms.sort_by_key(|term| std::cmp::Reverse(term.chars().count()));
@@ -157,14 +205,47 @@ pub fn scrub_text(text: &str, context: &ScrubContext) -> ScrubResult {
         }
     }
 
-    // Scrub phone numbers
-    let phones: Vec<String> = PHONE_RE
+    let phones: Vec<String> = PHONE_CANDIDATE_RE
         .find_iter(&result)
         .map(|m| m.as_str().to_string())
+        .filter(|candidate| looks_like_phone(candidate))
         .collect();
     for phone in phones {
         result = result.replace(&phone, "[PHONE]");
         phones_removed += 1;
+    }
+
+    for pattern in [&*NRIC_FIN_RE, &*US_SSN_RE, &*DOB_RE] {
+        let count = pattern.find_iter(&result).count();
+        if count > 0 {
+            result = pattern.replace_all(&result, "[IDENTIFIER]").into_owned();
+            identifiers_removed += count;
+        }
+    }
+    let labelled_ids: Vec<String> = LABELLED_ID_RE
+        .find_iter(&result)
+        .map(|match_| match_.as_str().to_string())
+        .filter(|candidate| looks_like_labelled_id(candidate))
+        .collect();
+    for labelled_id in labelled_ids {
+        result = result.replace(&labelled_id, "[IDENTIFIER]");
+        identifiers_removed += 1;
+    }
+
+    let handles: Vec<String> = SOCIAL_HANDLE_RE
+        .find_iter(&result)
+        .map(|match_| match_.as_str().to_string())
+        .filter(|candidate| is_social_handle(candidate))
+        .collect();
+    for handle in handles {
+        let prefix = handle
+            .chars()
+            .next()
+            .filter(|character| *character != '@')
+            .map(|character| character.to_string())
+            .unwrap_or_default();
+        result = result.replace(&handle, &format!("{prefix}[SOCIAL_HANDLE]"));
+        social_handles_removed += 1;
     }
 
     // Scrub company names (unless preserved)
@@ -179,14 +260,12 @@ pub fn scrub_text(text: &str, context: &ScrubContext) -> ScrubResult {
         }
     }
 
-    // Scrub addresses
-    let addresses: Vec<String> = ADDRESS_RE
-        .find_iter(&result)
-        .map(|m| m.as_str().to_string())
-        .collect();
-    for address in addresses {
-        result = result.replace(&address, "[ADDRESS]");
-        addresses_removed += 1;
+    for pattern in address_patterns() {
+        let count = pattern.find_iter(&result).count();
+        if count > 0 {
+            result = pattern.replace_all(&result, "[ADDRESS]").into_owned();
+            addresses_removed += count;
+        }
     }
 
     ScrubResult {
@@ -196,6 +275,8 @@ pub fn scrub_text(text: &str, context: &ScrubContext) -> ScrubResult {
         companies_removed,
         addresses_removed,
         identity_terms_removed,
+        identifiers_removed,
+        social_handles_removed,
     }
 }
 
@@ -214,7 +295,22 @@ pub fn contains_pii(text: &str, context: &ScrubContext) -> bool {
             }
         }
     }
-    if PHONE_RE.is_match(text) {
+    if PHONE_CANDIDATE_RE
+        .find_iter(text)
+        .any(|candidate| looks_like_phone(candidate.as_str()))
+    {
+        return true;
+    }
+    if NRIC_FIN_RE.is_match(text)
+        || US_SSN_RE.is_match(text)
+        || LABELLED_ID_RE
+            .find_iter(text)
+            .any(|candidate| looks_like_labelled_id(candidate.as_str()))
+        || DOB_RE.is_match(text)
+        || SOCIAL_HANDLE_RE
+            .find_iter(text)
+            .any(|candidate| is_social_handle(candidate.as_str()))
+    {
         return true;
     }
     if COMPANY_RE.is_match(text) {
@@ -224,10 +320,70 @@ pub fn contains_pii(text: &str, context: &ScrubContext) -> bool {
             }
         }
     }
-    if ADDRESS_RE.is_match(text) {
+    if address_patterns()
+        .iter()
+        .any(|pattern| pattern.is_match(text))
+    {
         return true;
     }
     false
+}
+
+fn address_patterns() -> [&'static Regex; 5] {
+    [
+        &SINGAPORE_ADDRESS_RE,
+        &UK_ADDRESS_RE,
+        &INDIA_ADDRESS_RE,
+        &EU_ADDRESS_RE,
+        &LEADING_NUMBER_ADDRESS_RE,
+    ]
+}
+
+fn looks_like_phone(candidate: &str) -> bool {
+    if DATE_LIKE_RE.is_match(candidate) || US_SSN_RE.is_match(candidate) {
+        return false;
+    }
+    let digit_count = candidate
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .count();
+    if !(8..=15).contains(&digit_count) {
+        return false;
+    }
+    let punctuation_count = candidate
+        .chars()
+        .filter(|character| !character.is_ascii_digit() && !character.is_ascii_whitespace())
+        .count();
+    candidate.starts_with('+')
+        || candidate.starts_with("00")
+        || candidate.starts_with('(')
+        || digit_count == 10
+        || punctuation_count >= 2
+}
+
+fn is_social_handle(candidate: &str) -> bool {
+    let handle = candidate
+        .trim_start_matches(|character: char| character != '@')
+        .trim_start_matches('@');
+    !matches!(
+        handle.to_ascii_lowercase().as_str(),
+        "media"
+            | "font-face"
+            | "keyframes"
+            | "supports"
+            | "import"
+            | "page"
+            | "charset"
+            | "namespace"
+    )
+}
+
+fn looks_like_labelled_id(candidate: &str) -> bool {
+    candidate
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .count()
+        >= 3
 }
 
 fn identity_pattern(term: &str) -> Regex {
@@ -272,6 +428,28 @@ mod tests {
     }
 
     #[test]
+    fn scrub_regional_phone_formats() {
+        let context = ScrubContext::default();
+        let fixtures = [
+            ("SG", "+65 9123 4567"),
+            ("UK", "+44 20 7946 0958"),
+            ("India", "+91 98765 43210"),
+            ("EU", "+49 30 901820"),
+            ("US", "+1 (415) 555-2671"),
+        ];
+
+        for (region, phone) in fixtures {
+            let result = scrub_text(&format!("Contact: {phone}"), &context);
+            assert_eq!(
+                result.text, "Contact: [PHONE]",
+                "{region} fixture was not fully scrubbed"
+            );
+            assert_eq!(result.phones_removed, 1);
+            assert!(!contains_pii(&result.text, &context));
+        }
+    }
+
+    #[test]
     fn scrub_company_names() {
         let context = ScrubContext::default();
         let result = scrub_text(
@@ -300,6 +478,72 @@ mod tests {
         let result = scrub_text("I lived at 123 Main Street and 456 Oak Avenue", &context);
         assert_eq!(result.text, "I lived at [ADDRESS] and [ADDRESS]");
         assert_eq!(result.addresses_removed, 2);
+    }
+
+    #[test]
+    fn scrub_regional_address_formats() {
+        let context = ScrubContext::default();
+        let fixtures = [
+            ("SG", "Blk 123 Ang Mo Kio Ave 3, #12-01, Singapore 560123"),
+            ("UK", "10 Downing Street, London SW1A 2AA"),
+            ("India", "12 MG Road, Bengaluru, Karnataka 560001"),
+            ("EU", "Unter den Linden 77, 10117 Berlin"),
+            ("US", "1600 Pennsylvania Avenue"),
+        ];
+
+        for (region, address) in fixtures {
+            let result = scrub_text(&format!("Address: {address}"), &context);
+            assert_eq!(
+                result.text, "Address: [ADDRESS]",
+                "{region} fixture was not fully scrubbed"
+            );
+            assert_eq!(result.addresses_removed, 1);
+            assert!(!contains_pii(&result.text, &context));
+        }
+    }
+
+    #[test]
+    fn scrub_identity_documents_dob_and_social_handles() {
+        let context = ScrubContext::default();
+        for fixture in [
+            "NRIC S1234567D",
+            "Passport: K1234567",
+            "Aadhaar: 1234 5678 9012",
+            "SSN: 123-45-6789",
+            "DOB: 31/12/1980",
+        ] {
+            let result = scrub_text(fixture, &context);
+            assert!(
+                result.text.contains("[IDENTIFIER]"),
+                "{fixture} was not scrubbed"
+            );
+            assert!(!contains_pii(&result.text, &context));
+        }
+
+        let result = scrub_text(
+            "Social: @safe_fixture; email: fixture@example.com",
+            &context,
+        );
+        assert_eq!(result.social_handles_removed, 1);
+        assert_eq!(result.emails_removed, 1);
+        assert!(!result.text.contains("@safe_fixture"));
+        assert!(result.text.contains("[EMAIL]"));
+        assert!(!contains_pii(&result.text, &context));
+    }
+
+    #[test]
+    fn deterministic_detectors_preserve_false_positive_fixtures() {
+        let context = ScrubContext::default();
+        let text = "Dates 2020-01-01 and 31/12/2024; build 12345678; version 1.2.3; Passport required for travel; led 12 roadmap initiatives; CSS @media query.";
+
+        let result = scrub_text(text, &context);
+
+        assert_eq!(result.text, text);
+        assert_eq!(result.phones_removed, 0);
+        assert_eq!(result.addresses_removed, 0);
+        assert_eq!(result.identifiers_removed, 0);
+        assert_eq!(result.social_handles_removed, 0);
+        assert!(!contains_pii(text, &context));
     }
 
     #[test]
@@ -374,6 +618,20 @@ mod tests {
         assert!(!result.text.contains("RENÉE CHÉN"));
         assert!(!result.text.contains("singapore"));
         assert!(context.has_identity_context());
+        Ok(())
+    }
+
+    #[test]
+    fn profile_context_redacts_non_latin_unicode_name() -> anyhow::Result<()> {
+        let profile = crate::engine::profile_parser::ProfileParser::profile_from_text(
+            "Name: 李小龙\nLocation: 新加坡",
+        )?;
+        let context = ScrubContext::from_profile(&profile);
+
+        let result = scrub_text("Candidate 李小龙 is based in 新加坡", &context);
+
+        assert_eq!(result.text, "Candidate [IDENTITY] is based in [IDENTITY]");
+        assert!(!contains_pii(&result.text, &context));
         Ok(())
     }
 
