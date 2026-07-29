@@ -73,7 +73,7 @@ lazy_static::lazy_static! {
     ).expect("date-of-birth regex must compile");
 
     static ref SOCIAL_HANDLE_RE: Regex = Regex::new(
-        r"(?m)(?:^|[\s:,(])@[A-Za-z0-9_][A-Za-z0-9_.-]{1,29}\b"
+        r#"(?m)(?:^|[\s:,("])@[A-Za-z0-9_][A-Za-z0-9_.-]{1,29}\b"#
     ).expect("social handle regex must compile");
 
     static ref EXPLICIT_NAME_RE: Regex = Regex::new(
@@ -205,11 +205,7 @@ pub fn scrub_text(text: &str, context: &ScrubContext) -> ScrubResult {
         }
     }
 
-    let phones: Vec<String> = PHONE_CANDIDATE_RE
-        .find_iter(&result)
-        .map(|m| m.as_str().to_string())
-        .filter(|candidate| looks_like_phone(candidate))
-        .collect();
+    let phones = detected_phone_candidates(&result);
     for phone in phones {
         result = result.replace(&phone, "[PHONE]");
         phones_removed += 1;
@@ -295,10 +291,7 @@ pub fn contains_pii(text: &str, context: &ScrubContext) -> bool {
             }
         }
     }
-    if PHONE_CANDIDATE_RE
-        .find_iter(text)
-        .any(|candidate| looks_like_phone(candidate.as_str()))
-    {
+    if !detected_phone_candidates(text).is_empty() {
         return true;
     }
     if NRIC_FIN_RE.is_match(text)
@@ -359,6 +352,54 @@ fn looks_like_phone(candidate: &str) -> bool {
         || candidate.starts_with('(')
         || digit_count == 10
         || punctuation_count >= 2
+}
+
+fn detected_phone_candidates(text: &str) -> Vec<String> {
+    PHONE_CANDIDATE_RE
+        .find_iter(text)
+        .flat_map(|candidate| split_phone_candidate(candidate.as_str()))
+        .filter(|candidate| looks_like_phone(candidate))
+        .collect()
+}
+
+fn split_phone_candidate(candidate: &str) -> Vec<String> {
+    if candidate
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .count()
+        <= 15
+    {
+        return vec![candidate.to_string()];
+    }
+
+    for (index, character) in candidate.char_indices() {
+        if !character.is_ascii_whitespace() {
+            continue;
+        }
+        let right_index = candidate[index..]
+            .find(|next: char| !next.is_ascii_whitespace())
+            .map(|offset| index + offset)
+            .unwrap_or(candidate.len());
+        if right_index >= candidate.len() {
+            continue;
+        }
+        let left = candidate[..index].trim();
+        let right = candidate[right_index..].trim();
+        if !looks_like_phone(left) {
+            continue;
+        }
+        let right_segments = split_phone_candidate(right);
+        if right_segments
+            .iter()
+            .all(|segment| looks_like_phone(segment))
+        {
+            let mut segments = vec![left.to_string()];
+            segments.extend(right_segments);
+            return segments;
+        }
+    }
+
+    vec![candidate.to_string()]
 }
 
 fn is_social_handle(candidate: &str) -> bool {
@@ -450,6 +491,16 @@ mod tests {
     }
 
     #[test]
+    fn adjacent_phone_numbers_are_split_and_scrubbed() {
+        let context = ScrubContext::default();
+        let result = scrub_text("Phones: 555-123-4567 (212) 555-1212", &context);
+
+        assert_eq!(result.text, "Phones: [PHONE] [PHONE]");
+        assert_eq!(result.phones_removed, 2);
+        assert!(!contains_pii(&result.text, &context));
+    }
+
+    #[test]
     fn scrub_company_names() {
         let context = ScrubContext::default();
         let result = scrub_text(
@@ -529,6 +580,7 @@ mod tests {
         assert!(!result.text.contains("@safe_fixture"));
         assert!(result.text.contains("[EMAIL]"));
         assert!(!contains_pii(&result.text, &context));
+        assert!(contains_pii(r#"{"input":"@safe_fixture"}"#, &context));
     }
 
     #[test]
