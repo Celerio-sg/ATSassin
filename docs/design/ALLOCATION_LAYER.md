@@ -63,20 +63,20 @@ Derive adjacency from the role-archetype inference already in the pipeline: if i
 Min-cost max-flow. Not maximum bipartite matching — with a single candidate that is degenerate.
 
 ```
-                  [cap = weekly effort budget]
+                  [cap = weekly effort budget, cost 0]
         source ───────────────────────────────▶ user
-           │                                     │
-           │            [cap = diversification cap per family]
-           │                                     ▼
-           │                              role archetype
-           │                                     │
-           │         [cap = 1, cost = −log( P(callback) · decay(age) )]
-           │                                     ▼
-           │                                 posting
-           │                                     │
-           │                              [cap = 1]
-           │                                     ▼
-           └──[slack: cap = budget, cost = τ]──▶ sink
+                                                 │  │
+                    [cap = diversification cap]  │  └──[slack: cap = budget, cost = τ]──┐
+                                                 ▼                                       │
+                                          role archetype                                 │
+                                                 │                                       │
+              [cap = 1, cost = −log( P(callback) · decay(age) )]                         │
+                                                 ▼                                       │
+                                             posting                                     │
+                                                 │                                       │
+                                          [cap = 1, cost 0]                              │
+                                                 ▼                                       ▼
+                                                sink ◀────────────────────────────────────
 ```
 
 ### ⚠️ The cost function is `−log( P · decay )`, **not** `−log P × decay`
@@ -92,13 +92,27 @@ With `decay ∈ (0,1]` shrinking as a posting ages, **multiplying** by decay *re
 
 Only the additive form (`−log P − log decay`) makes cost *increase* with age, which is what the <7-day review-bandwidth finding requires. Implement `−log(P · decay)` or equivalently `−log P − log decay`.
 
-### The slack edge is load-bearing
+### The slack edge is load-bearing — and it must attach to `user`, not `source`
 
-Min-cost **max**-flow saturates the source edge: with all-positive costs it will always spend the entire budget, even on postings not worth applying to. That contradicts [ADR-008](../DECISIONS.md), which requires a slate of 1 — or 0 — to be reachable.
+Min-cost **max**-flow maximises flow *value* first, then minimises cost among the flows achieving it. Without slack it will always spend the entire budget, even on postings not worth applying to — contradicting [ADR-008](../DECISIONS.md), which requires a slate of 1, or 0, to be reachable.
 
-The `source → sink` slack edge above fixes it. `τ` is the **reservation cost**: the cost of *not* using a unit of budget. Any posting whose edge cost exceeds `τ` is left unselected because routing flow through slack is cheaper. `τ` is therefore the relevance floor, expressed inside the graph rather than as a pre-filter, and it must be user-visible and tunable — it is the knob that says "don't put things on my slate that aren't worth it."
+**The attachment point is not a detail.** Placing slack on `source → sink` breaks it, and the failure is silent:
+
+| Placement | Source cut | Max flow | Behaviour |
+|---|---|---|---|
+| `source → sink` ✗ | `B` (to user) + `B` (to slack) = **2B** | 2B | The solver *must* achieve 2B, so it pushes B through postings **and** B through slack. The posting path saturates anyway — every posting is selected regardless of cost, and the slack accomplishes nothing |
+| `user → sink` ✓ | **B** | B | The solver distributes B units between posting paths and slack, choosing whichever is cheaper per unit |
+
+Worked example — budget `B = 5`, `τ = 2.996` (`P_min = 0.05`), posting costs `[1.2, 1.8, 4.5, 5.0, 6.1]`:
+
+- **Correct (`user → sink`):** postings at 1.2 and 1.8 are below `τ`; the remaining 3 units flow through slack. Total cost `1.2 + 1.8 + 3(2.996) = 11.99`. Forcing all five postings would cost `18.6`, so the solver correctly prefers to leave budget unspent. **Slate of 2.**
+- **Wrong (`source → sink`):** max flow is 10, forcing all 5 postings including the one at 6.1, plus 5 slack units. **Slate of 5, always.**
+
+`τ` is the **reservation cost** — the price of *not* using a unit of budget. It is where the relevance floor lives, expressed inside the graph rather than as a pre-filter, and it must be user-visible and tunable: it is the knob that says "don't put things on my slate that aren't worth it."
 
 Set `τ = −log(P_min)` where `P_min` is the lowest callback probability the user considers worth an application.
+
+**Implementer's check:** with every posting cost above `τ`, the solver must return an **empty** slate. If it returns a full one, the slack is attached to the wrong node.
 
 Each element earns its place:
 
@@ -124,10 +138,12 @@ Everything a contributor needs, so the data structure and the details are not ch
 | Element | Value |
 |---|---|
 | `source → user` | cap = effort budget (derived or asked); cost 0 |
-| `source → sink` (slack) | cap = effort budget; cost = `τ` = `−log(P_min)` |
+| **`user → sink` (slack)** | cap = effort budget; cost = `τ` = `−log(P_min)`. **Must attach to `user`, not `source`** — see above |
 | `user → archetype` | cap = diversification cap for that family; cost 0 |
 | `archetype → posting` | cap 1; cost = `−log( P(callback) · decay(age) )` |
 | `posting → sink` | cap 1; cost 0 |
+
+**Degenerate inputs.** `P = 0` or `decay = 0` gives infinite cost. Clamp both to a small floor (suggest `P_floor = 1e-6`) before taking the log, or exclude the posting from the graph entirely — do not let an infinity or a `NaN` reach the solver. Postings past `validThrough` are excluded rather than decayed to zero, so in practice the decay floor should rarely bind.
 
 **Posting-to-archetype multiplicity.** A posting may plausibly belong to several role families. Assign each posting to **exactly one** archetype — its highest-scoring — otherwise the diversification cap is unenforceable, since flow could reach one posting through several archetype edges and evade the cap. Record the alternates for display; do not add parallel edges.
 
@@ -136,6 +152,28 @@ Everything a contributor needs, so the data structure and the details are not ch
 **Decay functional form.** Exponential with a documented half-life: `decay(age_days) = 0.5^(age_days / h)`. `h` is derived from observed data once Layer 2 has it, and is a documented parameter until then — not a hardcoded constant ([ADR-008](../DECISIONS.md)). Postings past `validThrough` (#149) are excluded from the graph entirely rather than decayed.
 
 **Representation.** Vector-backed with `usize` indices into a `Vec<Edge>`, not `Rc<RefCell<Node>>`. This is a coding convention rather than a scale-driven optimisation — it costs nothing, avoids fighting the borrow checker in a ~200-line solver, and is the one piece of the graph-engineering research that applies at any scale. The graph is rebuilt per solve; there is no mutation hot loop, so none of the arena/CSR/generational-index machinery is warranted ([REJ-004](../DECISIONS.md)).
+
+## Solver invariants — test these before trusting the construction
+
+**Two flow-network errors have already shipped in this document**, both syntactically plausible and both silently inverting the model:
+
+1. `cost = −log P × decay` instead of `−log( P · decay )` — made the solver prefer *stale* postings.
+2. Slack attached to `source` instead of `user` — made the slate unable to under-fill, so every posting was selected regardless of cost.
+
+Neither was caught by reading. Both are caught immediately by a numeric test. **Write these as unit tests first, before the solver.** If a future change to this document contradicts one of them, the test is right and the document is wrong.
+
+| # | Invariant | Why it catches a real error |
+|---|---|---|
+| 1 | Two postings identical except age → the **younger** is selected | Catches the cost-function inversion |
+| 2 | All posting costs above `τ` → slate is **empty** | Catches slack misattachment |
+| 3 | All posting costs below `τ`, more postings than budget → slate size **equals budget** | Catches slack starving the posting path |
+| 4 | Postings in one family exceeding its cap → selection **stops at the cap**, remainder goes to other families or slack | Catches unenforced diversification |
+| 5 | Same input twice → **byte-identical** slate | Catches non-deterministic tie-breaking |
+| 6 | `P = 0` or `decay = 0` present → solver **completes**, no `inf`/`NaN` | Catches the degenerate-input path |
+| 7 | Selected total cost ≤ cost of any other feasible selection of the same size | Catches a wrong-direction objective generally |
+| 8 | Budget of 1 → slate of exactly 0 or 1 | Catches off-by-one in source capacity |
+
+Invariant 7 is the general one: if the solver is minimising the wrong thing, it fails even when 1–6 pass.
 
 ## ⚠️ Open conflict with #167 — resolve before implementing
 
