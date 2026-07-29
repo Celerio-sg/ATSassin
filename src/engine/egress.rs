@@ -148,6 +148,38 @@ mod tests {
     }
 
     #[test]
+    fn regional_pii_never_constructs_a_payload() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("training_pairs.jsonl");
+        std::fs::write(
+            &path,
+            "{\"instruction\":\"contact\",\"input\":\"+65 9123 4567\",\"output\":\"safe\"}\n",
+        )?;
+
+        let error = ValidatedTrainingPayload::from_jsonl(&path, &identity_context())
+            .expect_err("international PII-bearing bytes must be rejected");
+
+        assert!(error.to_string().contains("personal data remains"));
+        Ok(())
+    }
+
+    #[test]
+    fn serialized_social_handle_never_constructs_a_payload() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("training_pairs.jsonl");
+        std::fs::write(
+            &path,
+            "{\"instruction\":\"social\",\"input\":\"@candidate\",\"output\":\"safe\"}\n",
+        )?;
+
+        let error = ValidatedTrainingPayload::from_jsonl(&path, &identity_context())
+            .expect_err("a handle after a JSON quote must be rejected");
+
+        assert!(error.to_string().contains("personal data remains"));
+        Ok(())
+    }
+
+    #[test]
     fn missing_identity_context_fails_closed() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let path = temp.path().join("training_pairs.jsonl");
