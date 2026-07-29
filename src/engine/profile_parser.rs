@@ -406,25 +406,20 @@ impl ProfileParser {
     }
 
     fn extract_name(text: &str) -> Option<String> {
-        let re = regex::Regex::new(r"(?i)^(?:name\s*[:\-]\s*)?(.*)").ok()?;
-        for line in text.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            if let Some(cap) = re.captures(trimmed) {
-                let candidate = cap
-                    .get(1)
-                    .map(|m| m.as_str().trim().to_string())
-                    .unwrap_or_default();
-                if !candidate.is_empty() && candidate.len() < 120 {
-                    return Some(candidate);
-                }
-            }
+        let explicit = regex::Regex::new(r"(?im)^\s*name\s*[:\-]\s*(\S.*?)\s*$").ok()?;
+        if let Some(name) = explicit
+            .captures(text)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str().trim())
+            .filter(|value| value.len() < 120)
+        {
+            return Some(name.to_string());
         }
+
         text.lines()
-            .find(|l| !l.trim().is_empty())
-            .map(|s| s.trim().to_string())
+            .map(str::trim)
+            .find(|line| !line.is_empty() && line.len() < 120)
+            .map(str::to_string)
     }
 
     /// Looks for an explicit `Label: value` line first (as written by the
@@ -715,6 +710,15 @@ mod tests {
         );
         assert_eq!(header_index_for(&headers, &["first name"]), Some(0));
         assert_eq!(header_index_for(&headers, &["nonexistent"]), None);
+    }
+
+    #[test]
+    fn explicit_name_takes_precedence_over_a_generic_heading() {
+        let profile =
+            ProfileParser::profile_from_text("# Resume\nName: Jane Example\nLocation: Singapore")
+                .unwrap();
+
+        assert_eq!(profile.name, "Jane Example");
     }
 
     #[test]

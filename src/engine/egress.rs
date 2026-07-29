@@ -176,6 +176,22 @@ mod tests {
     }
 
     #[test]
+    fn generic_profile_heading_cannot_authorize_egress() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("training_pairs.jsonl");
+        std::fs::write(&path, "{\"input\":\"Jane Example\"}\n")?;
+        let profile = crate::engine::profile_parser::ProfileParser::profile_from_text(
+            "# Resume\nJane Example\nLocation: Singapore",
+        )?;
+        let context = ScrubContext::from_profile(&profile);
+
+        let error = ValidatedTrainingPayload::from_jsonl(&path, &context)
+            .expect_err("a generic Markdown heading must never authorize free-text egress");
+        assert!(error.to_string().contains("identity context"));
+        Ok(())
+    }
+
+    #[test]
     fn missing_malformed_and_wrong_extension_inputs_fail_closed() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let context = identity_context();

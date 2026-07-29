@@ -34,6 +34,9 @@ lazy_static::lazy_static! {
         r"\d+\s+[A-Z][a-zA-Z0-9\s,]+?(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Place|Pl)"
     ).expect("address regex must compile");
 
+    static ref EXPLICIT_NAME_RE: Regex = Regex::new(
+        r"(?im)^\s*name\s*[:\-]\s*(\S.*?)\s*$"
+    ).expect("explicit name regex must compile");
 }
 
 /// PII scrubbing result with statistics
@@ -65,8 +68,14 @@ pub struct ScrubContext {
 impl ScrubContext {
     pub fn from_profile(profile: &UserProfile) -> Self {
         let mut context = Self::default();
-        context.insert_identity_term(&profile.name);
-        context.identity_anchor_present = !context.identity_terms.is_empty();
+        if let Some(explicit_name) = EXPLICIT_NAME_RE
+            .captures(&profile.raw_text)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str().trim())
+            .filter(|value| value.eq_ignore_ascii_case(profile.name.trim()))
+        {
+            context.identity_anchor_present = context.insert_identity_term(explicit_name);
+        }
         for value in [
             profile.email.as_deref(),
             profile.phone.as_deref(),
@@ -88,7 +97,8 @@ impl ScrubContext {
         context
     }
 
-    pub fn add_identity_term(&mut self, value: impl AsRef<str>) {
+    #[cfg(test)]
+    pub(crate) fn add_identity_term(&mut self, value: impl AsRef<str>) {
         if self.insert_identity_term(value) {
             self.identity_anchor_present = true;
         }
@@ -355,7 +365,7 @@ mod tests {
     #[test]
     fn profile_context_redacts_candidate_derived_values() -> anyhow::Result<()> {
         let profile = crate::engine::profile_parser::ProfileParser::profile_from_text(
-            "Renée Chén\nLocation: Singapore",
+            "Name: Renée Chén\nLocation: Singapore",
         )?;
         let context = ScrubContext::from_profile(&profile);
 
@@ -364,6 +374,18 @@ mod tests {
         assert!(!result.text.contains("RENÉE CHÉN"));
         assert!(!result.text.contains("singapore"));
         assert!(context.has_identity_context());
+        Ok(())
+    }
+
+    #[test]
+    fn generic_markdown_heading_is_not_an_identity_anchor() -> anyhow::Result<()> {
+        let profile = crate::engine::profile_parser::ProfileParser::profile_from_text(
+            "# Resume\nJane Example\nLocation: Singapore",
+        )?;
+        let context = ScrubContext::from_profile(&profile);
+
+        assert_eq!(profile.name, "# Resume");
+        assert!(!context.has_identity_context());
         Ok(())
     }
 

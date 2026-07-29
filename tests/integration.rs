@@ -159,8 +159,7 @@ fn test_distillation_pipeline_script_generation() -> Result<()> {
     use atsassin::engine::pii_scrubber::ScrubContext;
     let temp_dir = tempfile::tempdir()?;
     let roles = vec!["Software Architect".to_string(), "AI Engineer".to_string()];
-    let mut scrub_context = ScrubContext::default();
-    scrub_context.add_identity_term("Synthetic Candidate");
+    let scrub_context = ScrubContext::default();
     DistillationPipeline::export_training_data(
         "# Profile Text\nRust Specialist",
         &roles,
