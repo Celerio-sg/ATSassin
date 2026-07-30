@@ -806,6 +806,7 @@ Milestones in GitHub mirror these four groups. Tracking epic: **#156**.
 
 | Item | Issue | Size | Blocks |
 |---|---|---|---|
+| Forward-only transactional SQLite migrations | #181 closed — fixed | M | #142, #182, future schema work |
 | Canonical content-addressed job IDs | **#142** | M | Everything |
 | PII gate at single pre-upload choke point | **#143 closed — fixed** | M | Any egress work |
 | International PII detectors | #81 closed — fixed | S | #143 closed; containment prerequisite fixed |
@@ -944,6 +945,7 @@ Everything in Step 0 is **unblocked**. Layer work is blocked until Step 0 lands,
 #156 — TRACKING EPIC: next release (start here)
 
 Step 0 — Foundation repair  [MILESTONE, all unblocked]
+├── #181  Transactional SQLite migration framework      closed — fixed
 ├── #142  Canonical content-addressed job IDs           P0, M
 ├── #143  PII gate at single pre-upload choke point     closed — fixed
 ├── #144  Remove fabricated data                        S

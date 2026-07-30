@@ -342,7 +342,11 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_tick_scans_all_boards() {
-        let cfg = AppConfig::default();
+        let temp = tempfile::tempdir().unwrap();
+        let cfg = AppConfig {
+            database_path: temp.path().join("daemon-test.db"),
+            ..AppConfig::default()
+        };
         let daemon_cfg = DaemonConfig::default();
         let result = run_tick(&cfg, &["greenhouse".to_string()], "engineer", &daemon_cfg).await;
         // Network call may fail in CI; we only assert it doesn't panic.

@@ -21,7 +21,7 @@ Standard `#[test]` coverage. Runs on every PR via `ci.yml:39`.
 
 | Module | Why it is first | Minimum |
 |---|---|---|
-| `pipeline/tracker.rs` | Owns all user state; corruption is unrecoverable | Round-trip every entity; status transitions; upsert idempotency under ADR-001 |
+| `pipeline/tracker.rs`, `engine/feedback.rs` | Own shared user state; corruption or disclosure is unrecoverable | Round-trip every entity; transactional migration rollback; locked backup eligibility, lock-before-backup, source-permission and backup/live-row preservation; transaction-spanning version guards on pipeline and feedback operations; newer-schema refusal at every entry point; status transitions; upsert idempotency under ADR-001 |
 | `engine/pii_scrubber.rs` | Privacy gate | International formats (E.164, SG/UK/IN/EU), not just NANP |
 | `engine/egress.rs` / `engine/distillation.rs` | Shared training and prompt egress boundary | Gate ordering; PII/injection/overflow refusal before mock transport; no unvalidated request or file escapes the gate |
 | `engine/scorer.rs` | Feeds every downstream decision | Parse failure returns `Err`, never a synthesised score |
