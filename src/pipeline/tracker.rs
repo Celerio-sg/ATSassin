@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Transaction, TransactionBehavior, MAIN_DB};
 use std::collections::HashMap;
+use std::fs::OpenOptions;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -194,39 +195,23 @@ fn migration_2_feedback_schema(transaction: &Transaction<'_>) -> rusqlite::Resul
 fn migrate_database(
     conn: &mut Connection,
     db_path: &Path,
-    had_existing_data: bool,
     migrations: &[Migration],
 ) -> Result<MigrationOutcome> {
-    migrate_database_to(
-        conn,
-        db_path,
-        had_existing_data,
-        migrations,
-        CURRENT_SCHEMA_VERSION,
-    )
+    migrate_database_to(conn, db_path, migrations, CURRENT_SCHEMA_VERSION)
 }
 
 fn migrate_database_to(
     conn: &mut Connection,
     db_path: &Path,
-    had_existing_data: bool,
     migrations: &[Migration],
     target_version: u32,
 ) -> Result<MigrationOutcome> {
-    migrate_database_to_with_lock_hook(
-        conn,
-        db_path,
-        had_existing_data,
-        migrations,
-        target_version,
-        || Ok(()),
-    )
+    migrate_database_to_with_lock_hook(conn, db_path, migrations, target_version, || Ok(()))
 }
 
 fn migrate_database_to_with_lock_hook<F>(
     conn: &mut Connection,
     db_path: &Path,
-    had_existing_data: bool,
     migrations: &[Migration],
     target_version: u32,
     after_lock: F,
@@ -264,7 +249,7 @@ where
     }
 
     after_lock()?;
-    let backup_path = if had_existing_data {
+    let backup_path = if database_has_pre_migration_state(&transaction, from)? {
         let path = create_pre_migration_backup(db_path, from, target_version)?;
         warn!(
             "SQLite schema migration backup created at {}",
@@ -310,6 +295,20 @@ where
     }
 }
 
+fn database_has_pre_migration_state(transaction: &Transaction<'_>, version: u32) -> Result<bool> {
+    if version > 0 {
+        return Ok(true);
+    }
+    let user_schema_objects: i64 = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'",
+            [],
+            |row| row.get(0),
+        )
+        .context("Failed to determine whether the locked database needs a migration backup")?;
+    Ok(user_schema_objects > 0)
+}
+
 fn validate_migration_sequence(migrations: &[Migration], target_version: u32) -> Result<()> {
     if migrations.len() != target_version as usize {
         anyhow::bail!(
@@ -347,6 +346,31 @@ fn create_pre_migration_backup(db_path: &Path, from: u32, to: u32) -> Result<Pat
     let backup_path = db_path.with_file_name(format!(
         "{file_name}.backup-v{from}-to-v{to}-{timestamp}-{unique}.sqlite3"
     ));
+    let source_permissions = std::fs::metadata(db_path)
+        .with_context(|| {
+            format!(
+                "Refusing to migrate because source database permissions could not be read from {}",
+                db_path.display()
+            )
+        })?
+        .permissions();
+    let placeholder = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&backup_path)
+        .with_context(|| {
+            format!(
+                "Refusing to migrate because the backup could not be created securely at {}",
+                backup_path.display()
+            )
+        })?;
+    std::fs::set_permissions(&backup_path, source_permissions.clone()).with_context(|| {
+        format!(
+            "Refusing to migrate because source permissions could not be applied to {}",
+            backup_path.display()
+        )
+    })?;
+    drop(placeholder);
 
     let source = Connection::open(db_path).with_context(|| {
         format!(
@@ -354,14 +378,21 @@ fn create_pre_migration_backup(db_path: &Path, from: u32, to: u32) -> Result<Pat
             db_path.display()
         )
     })?;
-    source
-        .backup(MAIN_DB, &backup_path, None)
-        .with_context(|| {
+    if let Err(error) = source.backup(MAIN_DB, &backup_path, None) {
+        let _ = std::fs::remove_file(&backup_path);
+        return Err(error).with_context(|| {
             format!(
                 "Refusing to migrate because the pre-migration backup could not be created at {}",
                 backup_path.display()
             )
-        })?;
+        });
+    }
+    std::fs::set_permissions(&backup_path, source_permissions).with_context(|| {
+        format!(
+            "Refusing to migrate because source permissions could not be restored on {}",
+            backup_path.display()
+        )
+    })?;
     Ok(backup_path)
 }
 
@@ -422,10 +453,7 @@ impl PipelineTracker {
             .conn
             .lock()
             .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
-        let had_existing_data = std::fs::metadata(&self.db_path)
-            .map(|metadata| metadata.is_file() && metadata.len() > 0)
-            .unwrap_or(false);
-        migrate_database(&mut conn, &self.db_path, had_existing_data, MIGRATIONS)?;
+        migrate_database(&mut conn, &self.db_path, MIGRATIONS)?;
         // debug, not info: this fires on every PipelineTracker::new() call,
         // including from background tasks (e.g. the TUI's async scan) where
         // an info-level println would corrupt the alternate-screen render.
@@ -1217,12 +1245,31 @@ pub(crate) fn open_current_database(db_path: &Path) -> Result<Connection> {
     open_migrated_database(db_path).map(|(conn, _)| conn)
 }
 
+pub(crate) fn with_current_database_transaction<T, F>(db_path: &Path, operation: F) -> Result<T>
+where
+    F: FnOnce(&Transaction<'_>) -> Result<T>,
+{
+    let (mut conn, _) = open_migrated_database(db_path)?;
+    let transaction = conn
+        .transaction_with_behavior(TransactionBehavior::Deferred)
+        .context("Failed to start guarded SQLite operation")?;
+    let version = read_user_version(&transaction)?;
+    if version != CURRENT_SCHEMA_VERSION {
+        anyhow::bail!(
+            "Database schema version changed to {version} while opening {}; expected {CURRENT_SCHEMA_VERSION}. Refusing to continue with stale schema semantics",
+            db_path.display()
+        );
+    }
+    let output = operation(&transaction)?;
+    transaction
+        .commit()
+        .context("Failed to commit guarded SQLite operation")?;
+    Ok(output)
+}
+
 fn open_migrated_database(db_path: &Path) -> Result<(Connection, MigrationOutcome)> {
-    let had_existing_data = std::fs::metadata(db_path)
-        .map(|metadata| metadata.is_file() && metadata.len() > 0)
-        .unwrap_or(false);
     let mut conn = Connection::open(db_path).context("Failed to open SQLite database")?;
-    let migration_outcome = migrate_database(&mut conn, db_path, had_existing_data, MIGRATIONS)?;
+    let migration_outcome = migrate_database(&mut conn, db_path, MIGRATIONS)?;
     Ok((conn, migration_outcome))
 }
 
@@ -1357,6 +1404,11 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let db_path = temp.path().join("legacy.db");
         create_old_shape_database(&db_path, 3, 4);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&db_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
 
         let tracker = PipelineTracker::new(&db_path).unwrap();
         let backup_path = match tracker.migration_outcome() {
@@ -1373,6 +1425,18 @@ mod tests {
         drop(tracker);
 
         assert_eq!(backup_files(&db_path), vec![backup_path.clone()]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&backup_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
         assert_database_integrity(&db_path, 3, 4, i64::from(CURRENT_SCHEMA_VERSION));
         assert_database_integrity(&backup_path, 3, 4, 0);
         let live = Connection::open(&db_path).unwrap();
@@ -1500,7 +1564,7 @@ mod tests {
 
         let mut concurrent_write_blocked = false;
         let outcome =
-            migrate_database_to_with_lock_hook(&mut conn, &db_path, true, &migrations, 2, || {
+            migrate_database_to_with_lock_hook(&mut conn, &db_path, &migrations, 2, || {
                 let concurrent = Connection::open(&db_path)?;
                 concurrent.busy_timeout(std::time::Duration::ZERO)?;
                 let error = concurrent
@@ -1539,6 +1603,32 @@ mod tests {
         assert_database_integrity(&backups[0], 2, 3, 0);
     }
 
+    #[test]
+    fn locked_backup_eligibility_protects_state_added_after_connection_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("racing-initializer.db");
+        std::fs::File::create(&db_path).unwrap();
+        let mut migrating = Connection::open(&db_path).unwrap();
+
+        create_legacy_database(&db_path, 2, 3);
+        let outcome = migrate_database(&mut migrating, &db_path, MIGRATIONS).unwrap();
+        drop(migrating);
+
+        let backup_path = match outcome {
+            MigrationOutcome::Migrated {
+                from,
+                to,
+                backup_path,
+            } => {
+                assert_eq!((from, to), (0, CURRENT_SCHEMA_VERSION));
+                backup_path
+            }
+            other => panic!("expected protected migration, got {other:?}"),
+        };
+        assert_database_integrity(&db_path, 2, 3, i64::from(CURRENT_SCHEMA_VERSION));
+        assert_database_integrity(&backup_path, 2, 3, 0);
+    }
+
     fn migration_2_fails(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
         transaction.execute_batch("CREATE TABLE must_rollback (id INTEGER);")?;
         Err(rusqlite::Error::InvalidQuery)
@@ -1563,7 +1653,7 @@ mod tests {
             },
         ];
 
-        let error = migrate_database_to(&mut conn, &db_path, true, &migrations, 2)
+        let error = migrate_database_to(&mut conn, &db_path, &migrations, 2)
             .expect_err("the injected migration must fail");
         assert!(error.to_string().contains("migration 2"));
         drop(conn);
