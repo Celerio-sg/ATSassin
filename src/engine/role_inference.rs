@@ -1,4 +1,4 @@
-use crate::engine::llm::LlmMessage;
+use crate::engine::prompts::Prompts;
 use crate::engine::router::ModelRouter;
 use crate::models::profile::UserProfile;
 use crate::models::role::{
@@ -16,68 +16,7 @@ impl RoleInferenceEngine {
     }
 
     pub async fn infer_roles(&self, profile: &UserProfile) -> Result<Vec<RoleArchetype>> {
-        let prompt = format!(
-            r#"You are a career analyst. Given the following candidate profile, infer 5-10 realistic job role archetypes that match their background.
-
-For each role, provide:
-- title (e.g., "Senior Product Manager - APAC")
-- industry (e.g., "SaaS", "FinTech", "E-commerce")
-- seniority (one of: intern, junior, mid, senior, lead, manager, director, vp, cxo)
-- compensation_band with currency, min/max/median integers, and source string.
-  ALWAYS express compensation as annual USD-equivalent figures, even if the
-  role would typically be paid in another currency (e.g. a Japan-based role
-  normally quoted in JPY) - convert to a realistic USD annual-equivalent
-  number rather than returning the local-currency figure with currency
-  still set to "USD". Sanity-check every figure against real-world pay for
-  the given seniority: an intern/junior/entry-level or part-time/mentor
-  role should land well under $100k USD; only VP/CXO-level roles should
-  approach $1-2M USD.
-- typical_requirements (3-6 key requirements)
-- top_companies (3-5 well-known companies that hire for this role)
-
-Return ONLY a JSON array of objects with keys: title, industry, seniority, market_demand (high/medium/low), compensation_band ({{currency, min, max, median, source}}), typical_requirements, top_companies.
-
-Profile:
-Name: {}
-Summary: {}
-Skills: {}
-Experience:
-{}
-
-Return compact JSON array, no markdown formatting."#,
-            profile.name,
-            profile.summary.as_deref().unwrap_or(""),
-            profile
-                .skills
-                .iter()
-                .map(|s| s.name.clone())
-                .collect::<Vec<_>>()
-                .join(", "),
-            profile
-                .experience
-                .iter()
-                .map(|e| format!(
-                    "- {} at {} ({})",
-                    e.title,
-                    e.company,
-                    e.start_date.as_deref().unwrap_or("?")
-                ))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-
-        let messages = vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content:
-                    "You are a concise JSON-only career analyst. Output only parsable JSON arrays."
-                        .to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
-        ];
+        let messages = Prompts.role_inference_prompt(profile)?;
 
         let tier = self.router.tier("light");
         let resp = self.router.chat(messages, tier).await?;

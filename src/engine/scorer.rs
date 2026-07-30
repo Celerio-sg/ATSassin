@@ -1,4 +1,4 @@
-use crate::engine::llm::LlmMessage;
+use crate::engine::egress::PromptEgressBuilder;
 use crate::engine::prompts::Prompts;
 use crate::engine::router::ModelRouter;
 use crate::models::job::{DimensionScore, Evaluation, Job, Recommendation};
@@ -20,7 +20,7 @@ impl Scorer {
         profile: &crate::models::profile::UserProfile,
     ) -> Result<Evaluation> {
         let fact_patches = self.patch_job_facts(job).await?;
-        let messages = self.prompts.scoring_prompt(job, profile);
+        let messages = self.prompts.scoring_prompt(job, profile)?;
         let tier = self.router.tier("balanced");
         let resp = self.router.chat(messages, tier).await?;
 
@@ -127,20 +127,15 @@ impl Scorer {
     }
 
     async fn patch_job_facts(&self, job: &Job) -> Result<Vec<serde_json::Value>> {
-        let prompt = format!(
-            "Review this job posting for factual errors or missing fields. Propose corrections ONLY for missing/inc whitelisted fields with exact evidence quotes.\n\nTitle: {}\nCompany: {}\nLocation: {}\nDescription: {}\n\nReturn JSON array of patches: [{{\"field\": \"...\", \"value\": \"...\", \"confidence\": \"high/medium/low\", \"evidence\": \"...\"}}]",
-            job.title, job.company, job.location, job.description
+        let mut builder = PromptEgressBuilder::new(
+            "You are a fact-checker. Output JSON only.",
+            "Review the supplied job posting for factual errors or missing fields. Propose corrections only for missing or incorrect whitelisted fields with exact evidence quotes. Return a JSON array of patches with field, value, confidence, and evidence keys.",
         );
-        let messages = vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content: "You are a fact-checker. Output JSON only.".to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
-        ];
+        builder.add_untrusted("job_title", &job.title)?;
+        builder.add_untrusted("job_company", &job.company)?;
+        builder.add_untrusted("job_location", &job.location)?;
+        builder.add_untrusted("job_description", &job.description)?;
+        let messages = builder.build()?;
         let tier = self.router.tier("light");
         match self.router.chat(messages, tier).await {
             Ok(resp) => {

@@ -814,7 +814,7 @@ Milestones in GitHub mirror these four groups. Tracking epic: **#156**.
 | Replace real-person UAT fixture | #146 closed — fixed | S | — |
 | Compensation floor: extract, prompt, stop defaulting | #155 | M | Layer 3 |
 | Remove OpenSSL/native-tls (3 paths) | #67 | S | — |
-| Merge prompt sanitisation into the single gate | #71 | S | #143 closed; reuse its egress module |
+| Merge prompt sanitisation into the single gate | #71 closed — fixed | S | #143 closed; shared egress boundary complete |
 | Profile-agnosticism corrections | #158 | L | Layers 1-3 |
 
 #### Step 1 — Evidence layer · *blocked on #142, #144, #145*
@@ -953,7 +953,7 @@ Step 0 — Foundation repair  [MILESTONE, all unblocked]
 ├── #158  Profile-agnosticism corrections               L
 ├── #81   International PII detectors                   closed — fixed
 ├── #67   Remove OpenSSL/native-tls (3 paths)           S
-└── #71   Merge prompt sanitisation into the gate       S
+└── #71   Merge prompt sanitisation into the gate       closed — fixed
 
 Step 1 — Evidence layer  [MILESTONE, blocked on #142/#144/#145]
 ├── #149  Tier 4: Schema.org JSON-LD  ← ship first, universal path
