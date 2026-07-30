@@ -1,3 +1,4 @@
+use crate::engine::egress::ValidatedLlmRequest;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ pub struct LlmMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmRequest {
+pub(crate) struct LlmRequest {
     pub model: String,
     pub messages: Vec<LlmMessage>,
     pub temperature: f32,
@@ -68,7 +69,8 @@ impl LlmClient {
         }
     }
 
-    pub async fn chat(&self, request: LlmRequest) -> Result<LlmResponse> {
+    pub async fn chat(&self, request: ValidatedLlmRequest) -> Result<LlmResponse> {
+        let request = request.request();
         if self.is_circuit_open() {
             warn!("LLM circuit breaker open - provider unavailable");
             anyhow::bail!(
@@ -87,7 +89,7 @@ impl LlmClient {
                 sleep(backoff).await;
             }
 
-            match self.try_chat(&request).await {
+            match self.try_chat(request).await {
                 Ok(resp) => {
                     if attempt > 0 {
                         info!("LLM request succeeded on attempt {}", attempt + 1);

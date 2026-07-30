@@ -132,9 +132,9 @@ This document consolidates two adversarial red-team reviews of the ATSassin code
 
 **Files:** `src/engine/prompts.rs`, `src/engine/tailor.rs`, `src/engine/scorer.rs`
 
-**Finding:** Profile and job-description text is inserted into prompts without length limits or delimiting checks, risking token overflow and injection-style misuse.
+> **Resolved 2026-07-30 (#71):** The original finding is retained below as a point-in-time observation. Prompt construction now reuses the shared egress module from #143. All dynamic fields are labelled untrusted blocks, high-confidence nested instructions and marker collisions fail closed, the adjusted model context supplies the size budget, and the HTTP client accepts only a validated request.
 
-**Permanent fix:** Add length caps, boundary markers, and a small `InputSanitizer` that rejects or truncates suspiciously nested instructions.
+**Historical finding:** Profile and job-description text was inserted into prompts without length limits or delimiting checks, risking token overflow and injection-style misuse.
 
 **Related Issue:** #71
 
@@ -288,7 +288,7 @@ These are not blockers but represent high-value extensions:
 | HI-4 | HIGH | Board-health canary not automated | #68 | Open |
 | ME-1 | MEDIUM | Startup secret validation | #69 | Open |
 | ME-2 | MEDIUM | Health check command | #70 | Open |
-| ME-3 | MEDIUM | Prompt input sanitization | #71 | Open |
+| ME-3 | MEDIUM | Prompt input sanitization | #71 | Fixed |
 | ME-4 | MEDIUM | README sync check in CI | #72 | Open |
 | ME-5 | MEDIUM | Validate low-spec hardware claim | #73 | Open |
 | LO-1 | LOW | Configurable circuit breaker | #74 | Open |

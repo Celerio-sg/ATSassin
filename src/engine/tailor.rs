@@ -1,4 +1,4 @@
-use crate::engine::llm::LlmMessage;
+use crate::engine::egress::PromptEgressBuilder;
 use crate::engine::prompts::Prompts;
 use crate::engine::router::ModelRouter;
 use crate::models::job::Job;
@@ -19,7 +19,7 @@ impl Tailor {
         job: &Job,
         profile: &crate::models::profile::UserProfile,
     ) -> Result<String> {
-        let messages = self.prompts.tailor_resume_prompt(job, profile);
+        let messages = self.prompts.tailor_resume_prompt(job, profile)?;
         let tier = self.router.tier("balanced");
         let resp = self.router.chat(messages, tier).await?;
         Ok(resp.content)
@@ -30,17 +30,21 @@ impl Tailor {
         job: &Job,
         profile: &crate::models::profile::UserProfile,
     ) -> Result<String> {
-        let messages = self.prompts.cover_letter_prompt(job, profile);
+        let messages = self.prompts.cover_letter_prompt(job, profile)?;
         let tier = self.router.tier("balanced");
         let resp = self.router.chat(messages, tier).await?;
         Ok(resp.content)
     }
 
     pub async fn refine_resume(&self, draft: &str, job: &Job, feedback: &str) -> Result<String> {
-        let messages = vec![
-            LlmMessage { role: "system".to_string(), content: "You are an expert resume editor. Refine the draft based on feedback. Keep it factual and grounded in the original profile.".to_string() },
-            LlmMessage { role: "user".to_string(), content: format!("Job: {}\n\nCurrent Draft:\n{}\n\nFeedback:\n{}\n\nProvide the improved resume:", job.title, draft, feedback) },
-        ];
+        let mut builder = PromptEgressBuilder::new(
+            "You are an expert resume editor. Refine the draft based on feedback. Keep it factual and grounded in the original profile.",
+            "Provide the improved resume using only the labelled data blocks below.",
+        );
+        builder.add_untrusted("job_title", &job.title)?;
+        builder.add_untrusted("current_draft", draft)?;
+        builder.add_untrusted("user_feedback", feedback)?;
+        let messages = builder.build()?;
         let tier = self.router.tier("balanced");
         let resp = self.router.chat(messages, tier).await?;
         Ok(resp.content)

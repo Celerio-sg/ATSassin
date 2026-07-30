@@ -1,6 +1,7 @@
-use super::llm::LlmMessage;
+use super::egress::{PromptEgressBuilder, PromptEgressPayload};
 use crate::models::job::Job;
 use crate::models::profile::UserProfile;
+use anyhow::Result;
 
 const AI_PHRASE_BLACKLIST: [&str; 74] = [
     "spearheaded",
@@ -82,27 +83,52 @@ const AI_PHRASE_BLACKLIST: [&str; 74] = [
 pub struct Prompts;
 
 impl Prompts {
-    pub fn scoring_prompt(&self, job: &Job, profile: &UserProfile) -> Vec<LlmMessage> {
-        vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content: "You are an expert ATS and career analyst. Evaluate the candidate's fit for the job description using these 6 dimensions (1-5 each): Role match, North-star alignment, Comp, Cultural signals, Red flags, Global fit. Output a JSON object with overall_score (0.0-1.0), dimensions (array of objects with name/score/max/rationale), match_summary, strengths (array), gaps (array), red_flags (array). Do not invent achievements.".to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "Job:\nTitle: {}\nCompany: {}\nLocation: {}\nDescription: {}\nRequirements: {}\n\nCandidate Profile:\nName: {}\nSummary: {}\nSkills: {}\nExperience:\n{}\n\nEvaluate fit now.",
-                    job.title, job.company, job.location, job.description,
-                    job.requirements.join(", "), profile.name,
-                    profile.summary.as_deref().unwrap_or(""),
-                    profile.skills.iter().map(|s| s.name.clone()).collect::<Vec<_>>().join(", "),
-                    profile.experience.iter().map(|e| format!("- {} at {} ({})", e.title, e.company, e.start_date.as_deref().unwrap_or("?"))).collect::<Vec<_>>().join("\n")
-                ),
-            },
-        ]
+    pub fn scoring_prompt(&self, job: &Job, profile: &UserProfile) -> Result<PromptEgressPayload> {
+        let requirements = job.requirements.join(", ");
+        let skills = profile
+            .skills
+            .iter()
+            .map(|skill| skill.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let experience = profile
+            .experience
+            .iter()
+            .map(|entry| {
+                format!(
+                    "- {} at {} ({})",
+                    entry.title,
+                    entry.company,
+                    entry.start_date.as_deref().unwrap_or("?")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut builder = PromptEgressBuilder::new(
+            "You are an expert ATS and career analyst. Evaluate the candidate's fit for the supplied job and profile using these 6 dimensions (1-5 each): Role match, North-star alignment, Comp, Cultural signals, Red flags, Global fit. Output a JSON object with overall_score (0.0-1.0), dimensions (array of objects with name/score/max/rationale), match_summary, strengths (array), gaps (array), red_flags (array). Do not invent achievements.",
+            "Evaluate fit using only the labelled data blocks below.",
+        );
+        builder.add_untrusted("job_title", &job.title)?;
+        builder.add_untrusted("job_company", &job.company)?;
+        builder.add_untrusted("job_location", &job.location)?;
+        builder.add_untrusted("job_description", &job.description)?;
+        builder.add_untrusted("job_requirements", &requirements)?;
+        builder.add_untrusted("candidate_name", &profile.name)?;
+        builder.add_untrusted(
+            "candidate_summary",
+            profile.summary.as_deref().unwrap_or(""),
+        )?;
+        builder.add_untrusted("candidate_skills", &skills)?;
+        builder.add_untrusted("candidate_experience", &experience)?;
+        builder.build()
     }
 
-    pub fn tailor_resume_prompt(&self, job: &Job, profile: &UserProfile) -> Vec<LlmMessage> {
+    pub fn tailor_resume_prompt(
+        &self,
+        job: &Job,
+        profile: &UserProfile,
+    ) -> Result<PromptEgressPayload> {
         let contact_line = [
             profile.email.clone(),
             profile.phone.clone(),
@@ -135,88 +161,156 @@ impl Prompts {
                 .join("\n")
         };
 
-        vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content: "You are an expert resume writer optimizing for both ATS (applicant tracking system) parsing and human review. Tailor the candidate's resume for the specific job description while staying 100% truthful to their experience - never invent roles, dates, employers, or achievements. \
+        let requirements = job.requirements.join(", ");
+        let skills = profile
+            .skills
+            .iter()
+            .map(|skill| skill.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let experience = format!(
+            "{} entries total - the resume must include all {} of them:\n{}",
+            profile.experience.len(),
+            profile.experience.len(),
+            profile
+                .experience
+                .iter()
+                .map(|entry| format!(
+                    "- {} at {} ({} - {})\n  {}",
+                    entry.title,
+                    entry.company,
+                    entry.start_date.as_deref().unwrap_or("?"),
+                    if entry.current {
+                        "Present".to_string()
+                    } else {
+                        entry.end_date.clone().unwrap_or_else(|| "?".to_string())
+                    },
+                    entry.description
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        let contact = if contact_line.is_empty() {
+            "(not provided - omit contact details rather than inventing them)"
+        } else {
+            &contact_line
+        };
+
+        let mut builder = PromptEgressBuilder::new(
+            "You are an expert resume writer optimizing for both ATS (applicant tracking system) parsing and human review. Tailor the candidate's resume for the supplied job description while staying 100% truthful to their experience - never invent roles, dates, employers, or achievements. \
 \
 ATS rules: plain text only (no tables, columns, icons, or text boxes); standard section headers exactly as: Contact, Summary, Experience, Skills, Education (omit Education only if the candidate profile has none); consistent date formatting per entry; mirror the job description's exact keywords and phrasing wherever the candidate's real experience genuinely supports it. \
 \
 Completeness rule: list EVERY experience entry given to you, in reverse-chronological order, exactly as many roles as appear in the candidate profile below - do not omit, merge, or cut it down to only the 'most relevant' few. This is a complete work-history document, not a highlights-only pitch. You may vary how much space/detail each entry gets (older or less relevant roles can be one line), but every entry must appear. \
 \
-Output only the tailored resume in Markdown.".to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "Job Description:\nTitle: {}\nCompany: {}\nDescription: {}\nRequirements: {}\n\nCandidate Profile:\nName: {}\nContact: {}\nSummary: {}\nSkills: {}\n\nEducation:\n{}\n\nExperience ({} entries total - the resume must include all {} of them):\n{}\n\nTailor the resume for this role. Never invent experience.",
-                    job.title, job.company, job.description,
-                    job.requirements.join(", "), profile.name,
-                    if contact_line.is_empty() { "(not provided - omit contact details rather than inventing them)".to_string() } else { contact_line },
-                    profile.summary.as_deref().unwrap_or(""),
-                    profile.skills.iter().map(|s| s.name.clone()).collect::<Vec<_>>().join(", "),
-                    education,
-                    profile.experience.len(),
-                    profile.experience.len(),
-                    profile.experience.iter().map(|e| format!("- {} at {} ({} - {})\n  {}", e.title, e.company, e.start_date.as_deref().unwrap_or("?"), if e.current { "Present".to_string() } else { e.end_date.clone().unwrap_or_else(|| "?".to_string()) }, e.description)).collect::<Vec<_>>().join("\n")
-                ),
-            },
-        ]
+Output only the tailored resume in Markdown.",
+            "Tailor the resume for this role using only the labelled data blocks below. Never invent experience.",
+        );
+        builder.add_untrusted("job_title", &job.title)?;
+        builder.add_untrusted("job_company", &job.company)?;
+        builder.add_untrusted("job_description", &job.description)?;
+        builder.add_untrusted("job_requirements", &requirements)?;
+        builder.add_untrusted("candidate_name", &profile.name)?;
+        builder.add_untrusted("candidate_contact", contact)?;
+        builder.add_untrusted(
+            "candidate_summary",
+            profile.summary.as_deref().unwrap_or(""),
+        )?;
+        builder.add_untrusted("candidate_skills", &skills)?;
+        builder.add_untrusted("candidate_education", &education)?;
+        builder.add_untrusted("candidate_experience", &experience)?;
+        builder.build()
     }
 
-    pub fn cover_letter_prompt(&self, job: &Job, profile: &UserProfile) -> Vec<LlmMessage> {
-        vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content: "You are an expert cover letter writer. Write a concise, targeted cover letter (150-250 words) for the candidate. Mirror 2-3 JD keywords naturally. Explain why the candidate is a strong fit. Never invent experience.".to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "Job Description:\nTitle: {}\nCompany: {}\nDescription: {}\n\nCandidate Profile:\nName: {}\nSummary: {}\nTop Skills: {}\nTop Achievement: {}\n\nWrite the cover letter.",
-                    job.title, job.company, job.description, profile.name,
-                    profile.summary.as_deref().unwrap_or(""),
-                    profile.skills.iter().take(5).map(|s| s.name.clone()).collect::<Vec<_>>().join(", "),
-                    profile.experience.first().map(|e| format!("{} at {}", e.title, e.company)).unwrap_or_default()
-                ),
-            },
-        ]
+    pub fn cover_letter_prompt(
+        &self,
+        job: &Job,
+        profile: &UserProfile,
+    ) -> Result<PromptEgressPayload> {
+        let top_skills = profile
+            .skills
+            .iter()
+            .take(5)
+            .map(|skill| skill.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let top_achievement = profile
+            .experience
+            .first()
+            .map(|entry| format!("{} at {}", entry.title, entry.company))
+            .unwrap_or_default();
+
+        let mut builder = PromptEgressBuilder::new(
+            "You are an expert cover letter writer. Write a concise, targeted cover letter (150-250 words) for the candidate. Mirror 2-3 job-description keywords naturally. Explain why the candidate is a strong fit. Never invent experience.",
+            "Write the cover letter using only the labelled data blocks below.",
+        );
+        builder.add_untrusted("job_title", &job.title)?;
+        builder.add_untrusted("job_company", &job.company)?;
+        builder.add_untrusted("job_description", &job.description)?;
+        builder.add_untrusted("candidate_name", &profile.name)?;
+        builder.add_untrusted(
+            "candidate_summary",
+            profile.summary.as_deref().unwrap_or(""),
+        )?;
+        builder.add_untrusted("candidate_top_skills", &top_skills)?;
+        builder.add_untrusted("candidate_top_achievement", &top_achievement)?;
+        builder.build()
     }
 
-    pub fn role_inference_prompt(&self, profile: &UserProfile) -> Vec<LlmMessage> {
-        vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content: "You are a career analyst. Given a candidate profile, infer 5-10 realistic job archetypes. Output JSON only.".to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "Profile:\nName: {}\nSummary: {}\nSkills: {}\nExperience: {}\n\nInfer suitable roles.",
-                    profile.name,
-                    profile.summary.as_deref().unwrap_or(""),
-                    profile.skills.iter().map(|s| format!("{} ({})", s.name, serde_json::to_string(&s.level).unwrap_or_default())).collect::<Vec<_>>().join(", "),
-                    profile.experience.iter().map(|e| format!("- {} at {}", e.title, e.company)).collect::<Vec<_>>().join("\n")
-                ),
-            },
-        ]
+    pub fn role_inference_prompt(&self, profile: &UserProfile) -> Result<PromptEgressPayload> {
+        let skills = profile
+            .skills
+            .iter()
+            .map(|skill| {
+                format!(
+                    "{} ({})",
+                    skill.name,
+                    serde_json::to_string(&skill.level).unwrap_or_default()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let experience = profile
+            .experience
+            .iter()
+            .map(|entry| {
+                format!(
+                    "- {} at {} ({})",
+                    entry.title,
+                    entry.company,
+                    entry.start_date.as_deref().unwrap_or("?")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut builder = PromptEgressBuilder::new(
+            "You are a concise JSON-only career analyst. Infer 5-10 realistic job role archetypes that match the supplied candidate background. For each role provide: title; industry; seniority (intern, junior, mid, senior, lead, manager, director, vp, or cxo); market_demand (high, medium, or low); compensation_band with currency, min/max/median integer USD-equivalent annual figures and a source string; 3-6 typical_requirements; and 3-5 top_companies. Sanity-check compensation against seniority: entry-level, part-time, and mentor roles should remain well under $100k USD, while only VP/CXO roles should approach $1-2M USD. Return only a compact parsable JSON array with no Markdown.",
+            "Infer role archetypes using only the labelled candidate data blocks below.",
+        );
+        builder.add_untrusted("candidate_name", &profile.name)?;
+        builder.add_untrusted(
+            "candidate_summary",
+            profile.summary.as_deref().unwrap_or(""),
+        )?;
+        builder.add_untrusted("candidate_skills", &skills)?;
+        builder.add_untrusted("candidate_experience", &experience)?;
+        builder.build()
     }
 
     pub fn deep_research_prompt(
         &self,
         role_title: &str,
         scraped_jobs: &[String],
-    ) -> Vec<LlmMessage> {
-        vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content: "You are a labor-market analyst. Given scraped job data for a role, synthesize market demand, typical requirements, and top companies. Output JSON only.".to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: format!("Role: {}\nScraped job summaries:\n{}\n\nSynthesize market insights.", role_title, scraped_jobs.join("\n---\n")),
-            },
-        ]
+    ) -> Result<PromptEgressPayload> {
+        let summaries = scraped_jobs.join("\n---\n");
+        let mut builder = PromptEgressBuilder::new(
+            "You are a labor-market analyst. Given scraped job data for a role, synthesize market demand, typical requirements, and top companies. Output JSON only.",
+            "Synthesize market insights using only the labelled data blocks below.",
+        );
+        builder.add_untrusted("role_title", role_title)?;
+        builder.add_untrusted("scraped_job_summaries", &summaries)?;
+        builder.build()
     }
 
     pub fn sanitize_output(&self, text: &str) -> String {
@@ -327,7 +421,8 @@ mod tests {
         let job = job_dummy();
         let profile = profile_with_n_experiences(5);
 
-        let msgs = prompts.tailor_resume_prompt(&job, &profile);
+        let prompt = prompts.tailor_resume_prompt(&job, &profile).unwrap();
+        let msgs = prompt.messages_for_test();
         let system = msgs.first().map(|m| m.content.as_str()).unwrap_or("");
         let user = msgs.get(1).map(|m| m.content.as_str()).unwrap_or("");
 
@@ -364,8 +459,40 @@ mod tests {
         let job = job_dummy();
         let profile = profile_with_n_experiences(2);
 
-        let msgs = prompts.cover_letter_prompt(&job, &profile);
+        let prompt = prompts.cover_letter_prompt(&job, &profile).unwrap();
+        let msgs = prompt.messages_for_test();
         let system = msgs.first().map(|m| m.content.as_str()).unwrap_or("");
         assert!(system.contains("Never invent experience"));
+    }
+
+    #[test]
+    fn synthetic_long_profile_fits_configured_route_budgets() {
+        let prompts = Prompts;
+        let profile = crate::engine::profile_parser::ProfileParser::profile_from_text(
+            include_str!("../../tests/uat/scenario_1_synthetic_apac_gtm/profile.md"),
+        )
+        .unwrap();
+        let job = job_dummy();
+
+        prompts
+            .role_inference_prompt(&profile)
+            .unwrap()
+            .into_request("light".into(), 0.2, 2048, 4096)
+            .expect("the long UAT profile must fit the configured light inference context");
+        prompts
+            .scoring_prompt(&job, &profile)
+            .unwrap()
+            .into_request("balanced".into(), 0.2, 2048, 8192)
+            .expect("the long UAT profile must fit the configured balanced scoring context");
+        prompts
+            .tailor_resume_prompt(&job, &profile)
+            .unwrap()
+            .into_request("balanced".into(), 0.2, 2048, 8192)
+            .expect("the complete 16-entry UAT profile must fit the tailoring context");
+        prompts
+            .cover_letter_prompt(&job, &profile)
+            .unwrap()
+            .into_request("balanced".into(), 0.2, 2048, 8192)
+            .expect("the UAT profile must fit the cover-letter context");
     }
 }

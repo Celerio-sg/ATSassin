@@ -1,4 +1,4 @@
-use crate::engine::llm::LlmMessage;
+use crate::engine::egress::PromptEgressBuilder;
 use crate::engine::router::ModelRouter;
 use crate::models::role::RoleArchetype;
 use anyhow::Result;
@@ -17,29 +17,16 @@ impl DeepResearchEngine {
         role: &RoleArchetype,
         market_data: &str,
     ) -> Result<RoleArchetype> {
-        let prompt = format!(
-            r#"Given the role "{}" in the {} industry at {} seniority, and the following market data, update the market_demand and requirements.
-
-Market data scraped from job boards:
-{}
-
-Return a JSON object with updated fields: title, industry, seniority, market_demand (level as high/medium/low/very_high), typical_requirements (array of strings), top_companies (array of strings)."#,
-            role.title,
-            role.industry,
-            serde_json::to_string(&role.seniority).unwrap_or_default(),
-            market_data
+        let seniority = serde_json::to_string(&role.seniority).unwrap_or_default();
+        let mut builder = PromptEgressBuilder::new(
+            "You are a concise JSON-only career analyst.",
+            "Use only the labelled role and market data below to return a JSON object with updated title, industry, seniority, market_demand (level high, medium, low, or very_high), typical_requirements (array of strings), and top_companies (array of strings).",
         );
-
-        let messages = vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content: "You are a concise JSON-only career analyst.".to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
-        ];
+        builder.add_untrusted("role_title", &role.title)?;
+        builder.add_untrusted("role_industry", &role.industry)?;
+        builder.add_untrusted("role_seniority", &seniority)?;
+        builder.add_untrusted("scraped_market_data", market_data)?;
+        let messages = builder.build()?;
 
         let tier = self.router.tier("balanced");
         let resp = self.router.chat(messages, tier).await?;
@@ -82,34 +69,27 @@ Return a JSON object with updated fields: title, industry, seniority, market_dem
         role: &RoleArchetype,
         profile: &crate::models::profile::UserProfile,
     ) -> Result<Vec<crate::models::role::SkillGap>> {
-        let prompt = format!(
-            r#"For the role "{}" with requirements: {}, and the candidate profile skills: {}, list skill gaps.
-
-Return JSON array of objects with keys: skill (string), required (bool), user_has (bool), severity (critical/major/minor/nice_to_have)."#,
-            role.title,
-            role.typical_requirements.join(", "),
-            profile
-                .skills
-                .iter()
-                .map(|s| format!(
+        let requirements = role.typical_requirements.join(", ");
+        let skills = profile
+            .skills
+            .iter()
+            .map(|skill| {
+                format!(
                     "{} ({})",
-                    s.name,
-                    serde_json::to_string(&s.level).unwrap_or_default()
-                ))
-                .collect::<Vec<_>>()
-                .join(", ")
+                    skill.name,
+                    serde_json::to_string(&skill.level).unwrap_or_default()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut builder = PromptEgressBuilder::new(
+            "You are a concise JSON-only career analyst.",
+            "List skill gaps using only the labelled role and candidate data below. Return a JSON array of objects with skill (string), required (bool), user_has (bool), and severity (critical, major, minor, or nice_to_have).",
         );
-
-        let messages = vec![
-            LlmMessage {
-                role: "system".to_string(),
-                content: "You are a concise JSON-only career analyst.".to_string(),
-            },
-            LlmMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
-        ];
+        builder.add_untrusted("role_title", &role.title)?;
+        builder.add_untrusted("role_requirements", &requirements)?;
+        builder.add_untrusted("candidate_skills", &skills)?;
+        let messages = builder.build()?;
 
         let tier = self.router.tier("light");
         let resp = self.router.chat(messages, tier).await?;

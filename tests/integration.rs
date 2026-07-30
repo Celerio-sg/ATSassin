@@ -2,19 +2,20 @@ use anyhow::Result;
 
 #[tokio::test]
 async fn test_llm_client_circuit_breaker() -> Result<()> {
+    use atsassin::engine::egress::PromptEgressBuilder;
     use atsassin::engine::llm::LlmClient;
     use atsassin::engine::llm::LlmProvider;
-    use atsassin::engine::llm::LlmRequest;
 
     let client = LlmClient::new("http://localhost:11434", None, LlmProvider::Ollama, 5, 1);
 
-    let request = LlmRequest {
-        model: "qwen3.5:4b".to_string(),
-        messages: vec![],
-        temperature: 0.7,
-        max_tokens: 100,
-        stream: false,
-    };
+    let mut builder = PromptEgressBuilder::new(
+        "Return the supplied marker.",
+        "Read the labelled test data.",
+    );
+    builder.add_untrusted("test_marker", "safe")?;
+    let request = builder
+        .build()?
+        .into_request("qwen3.5:4b".to_string(), 0.7, 100, 4096)?;
 
     let result = client.chat(request).await;
     assert!(result.is_err());

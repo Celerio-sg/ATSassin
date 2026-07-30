@@ -7,7 +7,7 @@
 
 ATSassin makes claims that ordinary unit tests cannot verify. "Runs on 4 GB CPU-only", "never fabricates data", "the recommendations are useful" are not assertions about a function's return value — they are assertions about a system's behaviour against the live internet and against real human outcomes.
 
-The current suite is 105 tests concentrated away from the highest-risk code: `tracker.rs` (980 lines, owns all user state), `distillation.rs` (566 lines, the privacy-sensitive egress path), `scorer.rs`, `matcher.rs`, and the entire `tailor → llm → router` chain have **zero** unit tests. Meanwhile `daemon.rs:349` contains `assert!(result.is_ok() || result.is_err())`, a tautology that always passes.
+At adoption, the suite had 105 tests concentrated away from the highest-risk code: `tracker.rs` (owns all user state), the privacy-sensitive egress path, `scorer.rs`, `matcher.rs`, and the entire `tailor → llm → router` chain had little or no direct coverage. Step 0 has since added deterministic egress, prompt-boundary, context-budget, and mock-transport refusal tests; the remaining module-level gaps below still govern new work.
 
 This strategy defines five tiers, each testing something the tier below cannot.
 
@@ -23,7 +23,7 @@ Standard `#[test]` coverage. Runs on every PR via `ci.yml:39`.
 |---|---|---|
 | `pipeline/tracker.rs` | Owns all user state; corruption is unrecoverable | Round-trip every entity; status transitions; upsert idempotency under ADR-001 |
 | `engine/pii_scrubber.rs` | Privacy gate | International formats (E.164, SG/UK/IN/EU), not just NANP |
-| `engine/distillation.rs` | The only egress path | Gate ordering; gate refuses when PII present; no file escapes the gate |
+| `engine/egress.rs` / `engine/distillation.rs` | Shared training and prompt egress boundary | Gate ordering; PII/injection/overflow refusal before mock transport; no unvalidated request or file escapes the gate |
 | `engine/scorer.rs` | Feeds every downstream decision | Parse failure returns `Err`, never a synthesised score |
 | `engine/matcher.rs` | Unverified ranking input | Scoring monotonicity |
 
