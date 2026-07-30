@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction, TransactionBehavior, MAIN_DB};
 use std::collections::HashMap;
-use std::sync::Mutex;
-use tracing::debug;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
+use tracing::{debug, warn};
 
 use crate::engine::compute_broker::{ComputeBroker, ProviderQuota};
 use crate::models::job::{
@@ -16,6 +18,353 @@ use crate::models::role::{
 };
 use crate::pipeline::board_discovery::{AtsType, DiscoveredBoard};
 
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+
+const INITIAL_SCHEMA_SQL: &str = r#"
+    CREATE TABLE IF NOT EXISTS profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT,
+        phone TEXT,
+        location TEXT,
+        linkedin_url TEXT,
+        portfolio_url TEXT,
+        summary TEXT,
+        raw_text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS roles (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        industry TEXT NOT NULL,
+        seniority TEXT NOT NULL,
+        fit_score REAL,
+        market_demand TEXT,
+        compensation_currency TEXT,
+        compensation_min INTEGER,
+        compensation_max INTEGER,
+        compensation_median INTEGER,
+        compensation_source TEXT,
+        typical_requirements TEXT,
+        top_companies TEXT,
+        inferred_from_profile INTEGER,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        company TEXT NOT NULL,
+        location TEXT NOT NULL,
+        remote INTEGER,
+        job_type TEXT,
+        salary_range TEXT,
+        description TEXT NOT NULL,
+        requirements TEXT,
+        posted_at TEXT,
+        source TEXT NOT NULL,
+        url TEXT NOT NULL,
+        applied INTEGER DEFAULT 0,
+        scraped_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS evaluations (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        overall_score REAL NOT NULL,
+        overall_grade TEXT NOT NULL,
+        dimensions TEXT,
+        match_summary TEXT,
+        strengths TEXT,
+        gaps TEXT,
+        red_flags TEXT,
+        recommendation TEXT NOT NULL,
+        model_used TEXT NOT NULL,
+        evaluated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS pipeline (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        notes TEXT,
+        contact TEXT,
+        follow_up_date TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS applications (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        resume_text TEXT NOT NULL,
+        cover_letter_text TEXT NOT NULL,
+        model_used TEXT NOT NULL,
+        generated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS market_data (
+        id TEXT PRIMARY KEY,
+        role_id TEXT NOT NULL,
+        posting_volume_30d INTEGER,
+        trend TEXT,
+        last_updated TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS company_boards (
+        company TEXT PRIMARY KEY,
+        ats_type TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        discovered_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS provider_quota (
+        provider TEXT PRIMARY KEY,
+        tier_type TEXT NOT NULL,
+        remaining_requests INTEGER,
+        remaining_tokens INTEGER,
+        resets_at TEXT,
+        reliability_score REAL,
+        last_observed TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_applications_job_id ON applications(job_id);
+    CREATE INDEX IF NOT EXISTS idx_pipeline_job_id ON pipeline(job_id);
+    CREATE INDEX IF NOT EXISTS idx_evaluations_job_id ON evaluations(job_id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
+"#;
+
+const FEEDBACK_SCHEMA_SQL: &str = r#"
+    CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        action TEXT NOT NULL,
+        recommendation_text TEXT NOT NULL,
+        edited_text TEXT,
+        edit_distance INTEGER,
+        confidence_before REAL NOT NULL,
+        confidence_after REAL NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_feedback_task ON feedback(task_type);
+    CREATE INDEX IF NOT EXISTS idx_feedback_job ON feedback(job_id);
+    CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+"#;
+
+type MigrationFn = for<'connection> fn(&Transaction<'connection>) -> rusqlite::Result<()>;
+
+#[derive(Clone, Copy)]
+struct Migration {
+    version: u32,
+    name: &'static str,
+    apply: MigrationFn,
+}
+
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial_pipeline_schema",
+        apply: migration_1_initial_pipeline_schema,
+    },
+    Migration {
+        version: 2,
+        name: "feedback_schema",
+        apply: migration_2_feedback_schema,
+    },
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MigrationOutcome {
+    Current {
+        version: u32,
+    },
+    Created {
+        version: u32,
+    },
+    Migrated {
+        from: u32,
+        to: u32,
+        backup_path: PathBuf,
+    },
+}
+
+fn migration_1_initial_pipeline_schema(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
+    transaction.execute_batch(INITIAL_SCHEMA_SQL)
+}
+
+fn migration_2_feedback_schema(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
+    transaction.execute_batch(FEEDBACK_SCHEMA_SQL)
+}
+
+fn migrate_database(
+    conn: &mut Connection,
+    db_path: &Path,
+    had_existing_data: bool,
+    migrations: &[Migration],
+) -> Result<MigrationOutcome> {
+    migrate_database_to(
+        conn,
+        db_path,
+        had_existing_data,
+        migrations,
+        CURRENT_SCHEMA_VERSION,
+    )
+}
+
+fn migrate_database_to(
+    conn: &mut Connection,
+    db_path: &Path,
+    had_existing_data: bool,
+    migrations: &[Migration],
+    target_version: u32,
+) -> Result<MigrationOutcome> {
+    migrate_database_to_with_lock_hook(
+        conn,
+        db_path,
+        had_existing_data,
+        migrations,
+        target_version,
+        || Ok(()),
+    )
+}
+
+fn migrate_database_to_with_lock_hook<F>(
+    conn: &mut Connection,
+    db_path: &Path,
+    had_existing_data: bool,
+    migrations: &[Migration],
+    target_version: u32,
+    after_lock: F,
+) -> Result<MigrationOutcome>
+where
+    F: FnOnce() -> Result<()>,
+{
+    validate_migration_sequence(migrations, target_version)?;
+    let observed_from = read_user_version(conn)?;
+    if observed_from > target_version {
+        anyhow::bail!(
+            "Database schema version {observed_from} is newer than this binary supports ({target_version}); refusing to open {} to prevent corruption",
+            db_path.display()
+        );
+    }
+    if observed_from == target_version {
+        return Ok(MigrationOutcome::Current {
+            version: observed_from,
+        });
+    }
+
+    let transaction = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .context("Failed to start SQLite schema migration transaction")?;
+    let from = read_user_version(&transaction)?;
+    if from > target_version {
+        anyhow::bail!(
+            "Database schema version {from} became newer than this binary supports ({target_version}) while waiting for the migration lock; refusing to modify {}",
+            db_path.display()
+        );
+    }
+    if from == target_version {
+        drop(transaction);
+        return Ok(MigrationOutcome::Current { version: from });
+    }
+
+    after_lock()?;
+    let backup_path = if had_existing_data {
+        let path = create_pre_migration_backup(db_path, from, target_version)?;
+        warn!(
+            "SQLite schema migration backup created at {}",
+            path.display()
+        );
+        Some(path)
+    } else {
+        None
+    };
+
+    for migration in migrations
+        .iter()
+        .filter(|migration| migration.version > from)
+    {
+        (migration.apply)(&transaction).with_context(|| {
+            format!(
+                "SQLite migration {} ({}) failed; all migration changes were rolled back",
+                migration.version, migration.name
+            )
+        })?;
+        transaction
+            .pragma_update(None, "user_version", i64::from(migration.version))
+            .with_context(|| {
+                format!(
+                    "Failed to record SQLite schema version {} after migration {}",
+                    migration.version, migration.name
+                )
+            })?;
+    }
+    transaction.commit().context(
+        "Failed to commit SQLite schema migrations; all migration changes were rolled back",
+    )?;
+
+    match backup_path {
+        Some(backup_path) => Ok(MigrationOutcome::Migrated {
+            from,
+            to: target_version,
+            backup_path,
+        }),
+        None => Ok(MigrationOutcome::Created {
+            version: target_version,
+        }),
+    }
+}
+
+fn validate_migration_sequence(migrations: &[Migration], target_version: u32) -> Result<()> {
+    if migrations.len() != target_version as usize {
+        anyhow::bail!(
+            "Invalid SQLite migration registry: {} migrations declared for schema version {}",
+            migrations.len(),
+            target_version
+        );
+    }
+    for (index, migration) in migrations.iter().enumerate() {
+        let expected = index as u32 + 1;
+        if migration.version != expected {
+            anyhow::bail!(
+                "Invalid SQLite migration registry: expected version {expected}, found {} ({})",
+                migration.version,
+                migration.name
+            );
+        }
+    }
+    Ok(())
+}
+
+fn read_user_version(conn: &Connection) -> Result<u32> {
+    let raw: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .context("Failed to read SQLite PRAGMA user_version")?;
+    u32::try_from(raw).context("SQLite PRAGMA user_version was negative or out of range")
+}
+
+fn create_pre_migration_backup(db_path: &Path, from: u32, to: u32) -> Result<PathBuf> {
+    let file_name = db_path.file_name().and_then(|name| name.to_str()).context(
+        "Cannot create a migration backup for a database path without a UTF-8 file name",
+    )?;
+    let timestamp = Utc::now().format("%Y%m%dT%H%M%S%.3fZ");
+    let unique = uuid::Uuid::new_v4().simple();
+    let backup_path = db_path.with_file_name(format!(
+        "{file_name}.backup-v{from}-to-v{to}-{timestamp}-{unique}.sqlite3"
+    ));
+
+    let source = Connection::open(db_path).with_context(|| {
+        format!(
+            "Refusing to migrate because the database could not be reopened for a consistent backup at {}",
+            db_path.display()
+        )
+    })?;
+    source
+        .backup(MAIN_DB, &backup_path, None)
+        .with_context(|| {
+            format!(
+                "Refusing to migrate because the pre-migration backup could not be created at {}",
+                backup_path.display()
+            )
+        })?;
+    Ok(backup_path)
+}
+
 pub struct PipelineTracker {
     conn: Mutex<Connection>,
     // Kept around so the calibration hook in `log_status_to_feedback`
@@ -23,117 +372,60 @@ pub struct PipelineTracker {
     // without re-deriving it from env. Issue #10 didn't store this
     // before, which is what caused the build to fail.
     db_path: std::path::PathBuf,
+    migration_outcome: MigrationOutcome,
+}
+
+struct GuardedConnection<'a> {
+    conn: MutexGuard<'a, Connection>,
+    finished: bool,
+}
+
+impl GuardedConnection<'_> {
+    fn commit(mut self) -> Result<()> {
+        self.conn
+            .execute_batch("COMMIT")
+            .context("Failed to commit guarded SQLite operation")?;
+        self.finished = true;
+        Ok(())
+    }
+}
+
+impl Deref for GuardedConnection<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.conn
+    }
+}
+
+impl Drop for GuardedConnection<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.conn.execute_batch("ROLLBACK");
+        }
+    }
 }
 
 impl PipelineTracker {
     pub fn new(db_path: &std::path::Path) -> Result<Self> {
-        let conn = Connection::open(db_path).context("Failed to open SQLite database")?;
-        let tracker = Self {
+        let (conn, migration_outcome) = open_migrated_database(db_path)?;
+
+        Ok(Self {
             conn: Mutex::new(conn),
             db_path: db_path.to_path_buf(),
-        };
-        tracker.init_schema()?;
-        Ok(tracker)
+            migration_outcome,
+        })
     }
 
     pub fn init_schema(&self) -> Result<()> {
-        let conn = self
+        let mut conn = self
             .conn
             .lock()
             .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
-        conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS profiles (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT,
-                phone TEXT,
-                location TEXT,
-                linkedin_url TEXT,
-                portfolio_url TEXT,
-                summary TEXT,
-                raw_text TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS roles (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                industry TEXT NOT NULL,
-                seniority TEXT NOT NULL,
-                fit_score REAL,
-                market_demand TEXT,
-                compensation_currency TEXT,
-                compensation_min INTEGER,
-                compensation_max INTEGER,
-                compensation_median INTEGER,
-                compensation_source TEXT,
-                typical_requirements TEXT,
-                top_companies TEXT,
-                inferred_from_profile INTEGER,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS jobs (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                company TEXT NOT NULL,
-                location TEXT NOT NULL,
-                remote INTEGER,
-                job_type TEXT,
-                salary_range TEXT,
-                description TEXT NOT NULL,
-                requirements TEXT,
-                posted_at TEXT,
-                source TEXT NOT NULL,
-                url TEXT NOT NULL,
-                applied INTEGER DEFAULT 0,
-                scraped_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS evaluations (
-                id TEXT PRIMARY KEY,
-                job_id TEXT NOT NULL,
-                overall_score REAL NOT NULL,
-                overall_grade TEXT NOT NULL,
-                dimensions TEXT,
-                match_summary TEXT,
-                strengths TEXT,
-                gaps TEXT,
-                red_flags TEXT,
-                recommendation TEXT NOT NULL,
-                model_used TEXT NOT NULL,
-                evaluated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS pipeline (
-                id TEXT PRIMARY KEY,
-                job_id TEXT NOT NULL,
-                status TEXT NOT NULL,
-                notes TEXT,
-                contact TEXT,
-                follow_up_date TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS applications (
-                id TEXT PRIMARY KEY,
-                job_id TEXT NOT NULL,
-                resume_text TEXT NOT NULL,
-                cover_letter_text TEXT NOT NULL,
-                model_used TEXT NOT NULL,
-                generated_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_applications_job_id ON applications(job_id);
-            CREATE TABLE IF NOT EXISTS market_data (
-                id TEXT PRIMARY KEY,
-                role_id TEXT NOT NULL,
-                posting_volume_30d INTEGER,
-                trend TEXT,
-                last_updated TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_pipeline_job_id ON pipeline(job_id);
-            CREATE INDEX IF NOT EXISTS idx_evaluations_job_id ON evaluations(job_id);
-            CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
-        ",
-        )?;
+        let had_existing_data = std::fs::metadata(&self.db_path)
+            .map(|metadata| metadata.is_file() && metadata.len() > 0)
+            .unwrap_or(false);
+        migrate_database(&mut conn, &self.db_path, had_existing_data, MIGRATIONS)?;
         // debug, not info: this fires on every PipelineTracker::new() call,
         // including from background tasks (e.g. the TUI's async scan) where
         // an info-level println would corrupt the alternate-screen render.
@@ -141,11 +433,40 @@ impl PipelineTracker {
         Ok(())
     }
 
-    pub fn save_profile(&self, profile: &UserProfile) -> Result<()> {
+    pub fn migration_outcome(&self) -> &MigrationOutcome {
+        &self.migration_outcome
+    }
+
+    fn current_connection(&self) -> Result<GuardedConnection<'_>> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        conn.execute_batch("BEGIN DEFERRED TRANSACTION")
+            .context("Failed to start guarded SQLite operation")?;
+        let version = match read_user_version(&conn) {
+            Ok(version) => version,
+            Err(error) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(error);
+            }
+        };
+        if version != CURRENT_SCHEMA_VERSION {
+            conn.execute_batch("ROLLBACK")
+                .context("Failed to roll back stale SQLite operation")?;
+            anyhow::bail!(
+                "Database schema version changed to {version} while this tracker was open; expected {CURRENT_SCHEMA_VERSION}. Refusing to continue with stale schema semantics; reopen {} with a compatible binary",
+                self.db_path.display()
+            );
+        }
+        Ok(GuardedConnection {
+            conn,
+            finished: false,
+        })
+    }
+
+    pub fn save_profile(&self, profile: &UserProfile) -> Result<()> {
+        let conn = self.current_connection()?;
         conn.execute(
             "INSERT OR REPLACE INTO profiles (id, name, email, phone, location, linkedin_url, portfolio_url, summary, raw_text, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -163,14 +484,12 @@ impl PipelineTracker {
                 profile.updated_at.to_rfc3339(),
             ],
         )?;
+        conn.commit()?;
         Ok(())
     }
 
     pub fn save_job(&self, job: &Job) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         conn.execute(
             "INSERT OR REPLACE INTO jobs (id, title, company, location, remote, job_type, salary_range, description, requirements, posted_at, source, url, applied, scraped_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
@@ -191,14 +510,12 @@ impl PipelineTracker {
                 job.scraped_at.to_rfc3339(),
             ],
         )?;
+        conn.commit()?;
         Ok(())
     }
 
     pub fn get_job(&self, job_id: &str) -> Result<Option<Job>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let mut stmt = conn.prepare(
             "SELECT id, title, company, location, remote, job_type, salary_range, description, requirements, posted_at, source, url, applied, scraped_at FROM jobs WHERE id = ?1",
         )?;
@@ -242,10 +559,7 @@ impl PipelineTracker {
         job_id: &str,
         status: PipelineStatus,
     ) -> Result<usize> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let rows_affected = conn.execute(
             "UPDATE pipeline SET status = ?1, updated_at = ?2 WHERE job_id = ?3",
             params![
@@ -254,6 +568,7 @@ impl PipelineTracker {
                 job_id
             ],
         )?;
+        conn.commit()?;
         Ok(rows_affected)
     }
 
@@ -271,10 +586,7 @@ impl PipelineTracker {
         follow_up_date: Option<DateTime<Utc>>,
     ) -> Result<usize> {
         let (rows_affected, status_to_log) = {
-            let conn = self
-                .conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+            let conn = self.current_connection()?;
             let status_json = status
                 .as_ref()
                 .map(|s| serde_json::to_string(s).unwrap_or_default());
@@ -296,6 +608,7 @@ impl PipelineTracker {
                     job_id
                 ],
             )?;
+            conn.commit()?;
             (rows, status)
         };
         if let Some(s) = status_to_log.as_ref() {
@@ -347,10 +660,7 @@ impl PipelineTracker {
     }
 
     pub fn save_evaluation(&self, eval: &Evaluation) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         conn.execute(
             "INSERT OR REPLACE INTO evaluations (id, job_id, overall_score, overall_grade, dimensions, match_summary, strengths, gaps, red_flags, recommendation, model_used, evaluated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
@@ -369,6 +679,7 @@ impl PipelineTracker {
                 eval.evaluated_at.to_rfc3339(),
             ],
         )?;
+        conn.commit()?;
         Ok(())
     }
 
@@ -383,10 +694,7 @@ impl PipelineTracker {
         cover_letter_text: &str,
         model_used: &str,
     ) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         conn.execute(
             "INSERT INTO applications (id, job_id, resume_text, cover_letter_text, model_used, generated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -399,6 +707,7 @@ impl PipelineTracker {
                 Utc::now().to_rfc3339(),
             ],
         )?;
+        conn.commit()?;
         Ok(())
     }
 
@@ -408,10 +717,7 @@ impl PipelineTracker {
         &self,
         job_id: &str,
     ) -> Result<Option<crate::models::job::Application>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let mut stmt = conn.prepare(
             "SELECT id, job_id, resume_text, cover_letter_text, model_used, generated_at
              FROM applications WHERE job_id = ?1 ORDER BY generated_at DESC LIMIT 1",
@@ -451,10 +757,7 @@ impl PipelineTracker {
             created_at: now,
             updated_at: now,
         };
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         conn.execute(
             "INSERT INTO pipeline (id, job_id, status, notes, contact, follow_up_date, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -469,14 +772,12 @@ impl PipelineTracker {
                 entry.updated_at.to_rfc3339(),
             ],
         )?;
+        conn.commit()?;
         Ok(entry)
     }
 
     pub fn update_pipeline_status(&self, entry_id: &str, status: PipelineStatus) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         conn.execute(
             "UPDATE pipeline SET status = ?1, updated_at = ?2 WHERE id = ?3",
             params![
@@ -485,14 +786,12 @@ impl PipelineTracker {
                 entry_id
             ],
         )?;
+        conn.commit()?;
         Ok(())
     }
 
     pub fn list_pipeline(&self) -> Result<Vec<PipelineEntry>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let mut stmt = conn.prepare("SELECT id, job_id, status, notes, contact, follow_up_date, created_at, updated_at FROM pipeline ORDER BY updated_at DESC")?;
         let mut rows = stmt.query([])?;
 
@@ -518,10 +817,7 @@ impl PipelineTracker {
     /// Never fabricates a score or status for a job that doesn't have one -
     /// both columns are `None` until real data exists.
     pub fn list_job_rows(&self, limit: usize) -> Result<Vec<JobRow>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let mut stmt = conn.prepare(
             "SELECT j.id, j.title, j.company, j.location, j.url, j.description, j.salary_range, j.remote,
                     e.overall_score, e.overall_grade, p.status, j.posted_at, j.scraped_at
@@ -574,10 +870,7 @@ impl PipelineTracker {
     /// real, sorted activity feed. Nothing here is invented - an empty
     /// database produces an empty feed.
     pub fn recent_activity(&self, limit: usize) -> Result<Vec<ActivityEvent>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let mut events = Vec::new();
 
         let mut stmt = conn.prepare(
@@ -646,10 +939,7 @@ impl PipelineTracker {
     /// Full evaluation (dimensions, strengths, gaps, red flags) for a job's
     /// most recent evaluation, if one exists - backs the TUI's detail panel.
     pub fn get_latest_evaluation(&self, job_id: &str) -> Result<Option<Evaluation>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let mut stmt = conn.prepare(
             "SELECT id, job_id, overall_score, overall_grade, dimensions, match_summary, strengths, gaps, red_flags, recommendation, model_used, evaluated_at
              FROM evaluations WHERE job_id = ?1 ORDER BY evaluated_at DESC LIMIT 1",
@@ -709,10 +999,7 @@ impl PipelineTracker {
     /// Real counts of pipeline entries by status - backs the TUI's pipeline
     /// summary panel. Empty vec if the pipeline is empty; never invented.
     pub fn pipeline_status_counts(&self) -> Result<Vec<(PipelineStatus, usize)>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let mut stmt = conn.prepare("SELECT status, COUNT(*) FROM pipeline GROUP BY status")?;
         let mut rows = stmt.query([])?;
         let mut out = Vec::new();
@@ -731,10 +1018,7 @@ impl PipelineTracker {
     /// from anywhere, so every session paid for a fresh LLM call just to
     /// re-show roles the user had already seen.
     pub fn list_roles(&self, limit: usize) -> Result<Vec<RoleArchetype>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         let mut stmt = conn.prepare(
             "SELECT id, title, industry, seniority, fit_score, market_demand, compensation_currency, compensation_min, compensation_max, compensation_median, compensation_source, typical_requirements, top_companies, inferred_from_profile, created_at
              FROM roles ORDER BY created_at DESC LIMIT ?1",
@@ -804,10 +1088,7 @@ impl PipelineTracker {
     }
 
     pub fn save_role(&self, role: &RoleArchetype) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
+        let conn = self.current_connection()?;
         conn.execute(
             "INSERT OR REPLACE INTO roles (id, title, industry, seniority, fit_score, market_demand, compensation_currency, compensation_min, compensation_max, compensation_median, compensation_source, typical_requirements, top_companies, inferred_from_profile, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
@@ -832,26 +1113,14 @@ impl PipelineTracker {
                 role.created_at.to_rfc3339(),
             ],
         )?;
+        conn.commit()?;
         Ok(())
     }
 
     /// Persist discovered company boards to the SQLite `company_boards`
     /// table (issue #1).
     pub fn save_company_boards(&self, boards: &[DiscoveredBoard]) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS company_boards (
-                company TEXT PRIMARY KEY,
-                ats_type TEXT NOT NULL,
-                slug TEXT NOT NULL,
-                source_url TEXT NOT NULL,
-                discovered_at TEXT NOT NULL
-            )",
-            [],
-        )?;
+        let conn = self.current_connection()?;
 
         let now = Utc::now().to_rfc3339();
         for board in boards {
@@ -867,25 +1136,13 @@ impl PipelineTracker {
                 ],
             )?;
         }
+        conn.commit()?;
         Ok(())
     }
 
     /// Load all persisted discovered company boards.
     pub fn load_company_boards(&self) -> Result<Vec<DiscoveredBoard>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire database lock: {}", e))?;
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS company_boards (
-                company TEXT PRIMARY KEY,
-                ats_type TEXT NOT NULL,
-                slug TEXT NOT NULL,
-                source_url TEXT NOT NULL,
-                discovered_at TEXT NOT NULL
-            )",
-            [],
-        )?;
+        let conn = self.current_connection()?;
         let mut stmt =
             conn.prepare("SELECT company, ats_type, slug, source_url FROM company_boards")?;
         let mut rows = stmt.query([])?;
@@ -907,19 +1164,7 @@ impl PipelineTracker {
 
     /// Persist observed provider quota (Phase 1 Compute Broker).
     pub fn save_provider_quota(&self, broker: &ComputeBroker) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS provider_quota (
-                provider TEXT PRIMARY KEY,
-                tier_type TEXT NOT NULL,
-                remaining_requests INTEGER,
-                remaining_tokens INTEGER,
-                resets_at TEXT,
-                reliability_score REAL,
-                last_observed TEXT
-            )",
-            [],
-        )?;
+        let conn = self.current_connection()?;
 
         for (provider, quota) in &broker.quota_cache {
             let tier_type = broker
@@ -942,24 +1187,13 @@ impl PipelineTracker {
                 ],
             )?;
         }
+        conn.commit()?;
         Ok(())
     }
 
     /// Load persisted provider quota.
     pub fn load_provider_quota(&self) -> Result<HashMap<String, ProviderQuota>> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS provider_quota (
-                provider TEXT PRIMARY KEY,
-                tier_type TEXT NOT NULL,
-                remaining_requests INTEGER,
-                remaining_tokens INTEGER,
-                resets_at TEXT,
-                reliability_score REAL,
-                last_observed TEXT
-            )",
-            [],
-        )?;
+        let conn = self.current_connection()?;
         let mut stmt = conn.prepare("SELECT provider, remaining_requests, remaining_tokens, resets_at, reliability_score, last_observed FROM provider_quota")?;
         let mut rows = stmt.query([])?;
         let mut out = HashMap::new();
@@ -976,5 +1210,485 @@ impl PipelineTracker {
             );
         }
         Ok(out)
+    }
+}
+
+pub(crate) fn open_current_database(db_path: &Path) -> Result<Connection> {
+    open_migrated_database(db_path).map(|(conn, _)| conn)
+}
+
+fn open_migrated_database(db_path: &Path) -> Result<(Connection, MigrationOutcome)> {
+    let had_existing_data = std::fs::metadata(db_path)
+        .map(|metadata| metadata.is_file() && metadata.len() > 0)
+        .unwrap_or(false);
+    let mut conn = Connection::open(db_path).context("Failed to open SQLite database")?;
+    let migration_outcome = migrate_database(&mut conn, db_path, had_existing_data, MIGRATIONS)?;
+    Ok((conn, migration_outcome))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user_version(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    fn row_count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    fn backup_files(db_path: &Path) -> Vec<PathBuf> {
+        let parent = db_path.parent().unwrap();
+        let prefix = format!("{}.backup-", db_path.file_name().unwrap().to_string_lossy());
+        let mut backups = std::fs::read_dir(parent)
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().starts_with(&prefix))
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        backups.sort();
+        backups
+    }
+
+    fn create_legacy_database(db_path: &Path, evaluations: usize, pipeline: usize) {
+        let conn = Connection::open(db_path).unwrap();
+        conn.execute_batch(INITIAL_SCHEMA_SQL).unwrap();
+        for index in 0..evaluations {
+            conn.execute(
+                "INSERT INTO evaluations (
+                    id, job_id, overall_score, overall_grade, dimensions,
+                    match_summary, strengths, gaps, red_flags, recommendation,
+                    model_used, evaluated_at
+                 ) VALUES (?1, ?2, 0.8, 'B+', '[]', 'seed', '[]', '[]', '[]',
+                           'apply', 'test-model', '2026-07-30T00:00:00Z')",
+                params![format!("evaluation-{index}"), format!("job-{index}")],
+            )
+            .unwrap();
+        }
+        for index in 0..pipeline {
+            conn.execute(
+                "INSERT INTO pipeline (
+                    id, job_id, status, notes, contact, follow_up_date,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, '\"new\"', 'seed', NULL, NULL,
+                           '2026-07-30T00:00:00Z', '2026-07-30T00:00:00Z')",
+                params![format!("pipeline-{index}"), format!("job-{index}")],
+            )
+            .unwrap();
+        }
+        conn.pragma_update(None, "user_version", 0).unwrap();
+    }
+
+    fn create_old_shape_database(db_path: &Path, evaluations: usize, pipeline: usize) {
+        create_legacy_database(db_path, evaluations, pipeline);
+        let conn = Connection::open(db_path).unwrap();
+        conn.execute_batch(
+            "
+            DROP TABLE applications;
+            DROP TABLE company_boards;
+            DROP TABLE provider_quota;
+            ",
+        )
+        .unwrap();
+    }
+
+    fn assert_database_integrity(db_path: &Path, evaluations: i64, pipeline: i64, version: i64) {
+        let conn = Connection::open(db_path).unwrap();
+        let integrity: String = conn
+            .query_row("PRAGMA quick_check", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(integrity, "ok");
+        assert_eq!(user_version(&conn), version);
+        assert_eq!(row_count(&conn, "evaluations"), evaluations);
+        assert_eq!(row_count(&conn, "pipeline"), pipeline);
+    }
+
+    #[test]
+    fn fresh_database_uses_migrations_without_creating_a_backup() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("fresh.db");
+
+        let tracker = PipelineTracker::new(&db_path).unwrap();
+
+        assert_eq!(
+            tracker.migration_outcome(),
+            &MigrationOutcome::Created {
+                version: CURRENT_SCHEMA_VERSION
+            }
+        );
+        drop(tracker);
+        assert!(backup_files(&db_path).is_empty());
+
+        let conn = Connection::open(&db_path).unwrap();
+        assert_eq!(user_version(&conn), i64::from(CURRENT_SCHEMA_VERSION));
+        for table in [
+            "profiles",
+            "roles",
+            "jobs",
+            "evaluations",
+            "pipeline",
+            "applications",
+            "market_data",
+            "company_boards",
+            "provider_quota",
+            "feedback",
+        ] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "migration did not create {table}");
+        }
+    }
+
+    #[test]
+    fn legacy_database_is_backed_up_adopted_and_preserved() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("legacy.db");
+        create_old_shape_database(&db_path, 3, 4);
+
+        let tracker = PipelineTracker::new(&db_path).unwrap();
+        let backup_path = match tracker.migration_outcome() {
+            MigrationOutcome::Migrated {
+                from,
+                to,
+                backup_path,
+            } => {
+                assert_eq!((*from, *to), (0, CURRENT_SCHEMA_VERSION));
+                backup_path.clone()
+            }
+            other => panic!("expected legacy migration, got {other:?}"),
+        };
+        drop(tracker);
+
+        assert_eq!(backup_files(&db_path), vec![backup_path.clone()]);
+        assert_database_integrity(&db_path, 3, 4, i64::from(CURRENT_SCHEMA_VERSION));
+        assert_database_integrity(&backup_path, 3, 4, 0);
+        let live = Connection::open(&db_path).unwrap();
+        for added_table in [
+            "applications",
+            "company_boards",
+            "provider_quota",
+            "feedback",
+        ] {
+            let exists: i64 = live
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [added_table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "legacy adoption did not add {added_table}");
+        }
+    }
+
+    #[test]
+    fn feedback_migration_preserves_existing_feedback_rows() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("feedback-v1.db");
+        create_legacy_database(&db_path, 1, 1);
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(FEEDBACK_SCHEMA_SQL).unwrap();
+            conn.execute(
+                "INSERT INTO feedback (
+                    job_id, task_type, action, recommendation_text,
+                    confidence_before, confidence_after
+                 ) VALUES ('job-1', 'scoring', 'accepted', 'keep me', 0.5, 0.8)",
+                [],
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+        }
+
+        let tracker = PipelineTracker::new(&db_path).unwrap();
+        let backup_path = match tracker.migration_outcome() {
+            MigrationOutcome::Migrated {
+                from,
+                to,
+                backup_path,
+            } => {
+                assert_eq!((*from, *to), (1, CURRENT_SCHEMA_VERSION));
+                backup_path.clone()
+            }
+            other => panic!("expected feedback migration, got {other:?}"),
+        };
+        drop(tracker);
+
+        for path in [&db_path, &backup_path] {
+            let conn = Connection::open(path).unwrap();
+            assert_eq!(row_count(&conn, "feedback"), 1);
+            let text: String = conn
+                .query_row(
+                    "SELECT recommendation_text FROM feedback WHERE job_id = 'job-1'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(text, "keep me");
+        }
+        let live = Connection::open(&db_path).unwrap();
+        assert_eq!(user_version(&live), i64::from(CURRENT_SCHEMA_VERSION));
+        let backup = Connection::open(&backup_path).unwrap();
+        assert_eq!(user_version(&backup), 1);
+    }
+
+    #[test]
+    fn repeated_open_is_a_noop_and_does_not_replace_the_backup() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("repeat.db");
+        create_old_shape_database(&db_path, 1, 1);
+
+        let first = PipelineTracker::new(&db_path).unwrap();
+        assert!(matches!(
+            first.migration_outcome(),
+            MigrationOutcome::Migrated { .. }
+        ));
+        drop(first);
+        let backups_after_first = backup_files(&db_path);
+
+        let second = PipelineTracker::new(&db_path).unwrap();
+        assert_eq!(
+            second.migration_outcome(),
+            &MigrationOutcome::Current {
+                version: CURRENT_SCHEMA_VERSION
+            }
+        );
+        drop(second);
+
+        assert_eq!(backup_files(&db_path), backups_after_first);
+        assert_database_integrity(&db_path, 1, 1, i64::from(CURRENT_SCHEMA_VERSION));
+    }
+
+    fn migration_1_succeeds(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
+        transaction.execute_batch("CREATE TABLE migration_1_applied (id INTEGER);")
+    }
+
+    fn migration_2_succeeds(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
+        transaction.execute_batch("CREATE TABLE migration_2_applied (id INTEGER);")
+    }
+
+    #[test]
+    fn migration_lock_precedes_backup_and_blocks_concurrent_writers() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("concurrent.db");
+        create_legacy_database(&db_path, 2, 3);
+        let mut conn = Connection::open(&db_path).unwrap();
+        let migrations = [
+            Migration {
+                version: 1,
+                name: "first_migration",
+                apply: migration_1_succeeds,
+            },
+            Migration {
+                version: 2,
+                name: "second_migration",
+                apply: migration_2_succeeds,
+            },
+        ];
+
+        let mut concurrent_write_blocked = false;
+        let outcome =
+            migrate_database_to_with_lock_hook(&mut conn, &db_path, true, &migrations, 2, || {
+                let concurrent = Connection::open(&db_path)?;
+                concurrent.busy_timeout(std::time::Duration::ZERO)?;
+                let error = concurrent
+                    .pragma_update(None, "user_version", 1)
+                    .expect_err("the migration lock must block writers before backup");
+                concurrent_write_blocked = matches!(
+                    &error,
+                    rusqlite::Error::SqliteFailure(failure, _)
+                        if matches!(
+                            failure.code,
+                            rusqlite::ErrorCode::DatabaseBusy
+                                | rusqlite::ErrorCode::DatabaseLocked
+                        )
+                );
+                anyhow::ensure!(
+                    concurrent_write_blocked,
+                    "concurrent schema write failed for an unexpected reason: {error}"
+                );
+                Ok(())
+            })
+            .unwrap();
+        drop(conn);
+
+        assert!(concurrent_write_blocked);
+        assert!(matches!(
+            outcome,
+            MigrationOutcome::Migrated { from: 0, to: 2, .. }
+        ));
+        assert_database_integrity(&db_path, 2, 3, 2);
+        let live = Connection::open(&db_path).unwrap();
+        assert_eq!(row_count(&live, "migration_1_applied"), 0);
+        assert_eq!(row_count(&live, "migration_2_applied"), 0);
+
+        let backups = backup_files(&db_path);
+        assert_eq!(backups.len(), 1);
+        assert_database_integrity(&backups[0], 2, 3, 0);
+    }
+
+    fn migration_2_fails(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
+        transaction.execute_batch("CREATE TABLE must_rollback (id INTEGER);")?;
+        Err(rusqlite::Error::InvalidQuery)
+    }
+
+    #[test]
+    fn failed_migration_rolls_back_schema_data_and_version() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("failed.db");
+        create_legacy_database(&db_path, 2, 3);
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+        }
+        let mut conn = Connection::open(&db_path).unwrap();
+        let migrations = [
+            MIGRATIONS[0],
+            Migration {
+                version: 2,
+                name: "injected_failure",
+                apply: migration_2_fails,
+            },
+        ];
+
+        let error = migrate_database_to(&mut conn, &db_path, true, &migrations, 2)
+            .expect_err("the injected migration must fail");
+        assert!(error.to_string().contains("migration 2"));
+        drop(conn);
+
+        assert_database_integrity(&db_path, 2, 3, 1);
+        let live = Connection::open(&db_path).unwrap();
+        let rolled_back_table: i64 = live
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'must_rollback'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rolled_back_table, 0);
+
+        let backups = backup_files(&db_path);
+        assert_eq!(backups.len(), 1);
+        assert_database_integrity(&backups[0], 2, 3, 1);
+    }
+
+    #[test]
+    fn newer_database_is_refused_without_writing_or_backing_up() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("newer.db");
+        create_legacy_database(&db_path, 2, 2);
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.pragma_update(None, "user_version", i64::from(CURRENT_SCHEMA_VERSION + 1))
+                .unwrap();
+        }
+
+        let error = PipelineTracker::new(&db_path)
+            .err()
+            .expect("a newer schema must be refused");
+
+        assert!(error.to_string().contains("newer than this binary"));
+        assert!(backup_files(&db_path).is_empty());
+        assert_database_integrity(&db_path, 2, 2, i64::from(CURRENT_SCHEMA_VERSION + 1));
+    }
+
+    #[test]
+    fn persistent_tracker_refuses_reads_and_writes_after_schema_advances() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("advanced-after-open.db");
+        let tracker = PipelineTracker::new(&db_path).unwrap();
+        let entry = tracker
+            .add_pipeline_entry("job-1", PipelineStatus::New)
+            .unwrap();
+
+        let concurrent = Connection::open(&db_path).unwrap();
+        concurrent
+            .pragma_update(None, "user_version", i64::from(CURRENT_SCHEMA_VERSION + 1))
+            .unwrap();
+        drop(concurrent);
+
+        let read_error = tracker
+            .list_pipeline()
+            .expect_err("a stale persistent tracker must refuse reads");
+        assert!(read_error.to_string().contains("stale schema semantics"));
+        let write_error = tracker
+            .update_pipeline_status(&entry.id, PipelineStatus::Applied)
+            .expect_err("a stale persistent tracker must refuse writes");
+        assert!(write_error.to_string().contains("stale schema semantics"));
+
+        let conn = Connection::open(&db_path).unwrap();
+        let stored_status: String = conn
+            .query_row(
+                "SELECT status FROM pipeline WHERE id = ?1",
+                [&entry.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<PipelineStatus>(&stored_status).unwrap(),
+            PipelineStatus::New
+        );
+    }
+
+    #[test]
+    fn guarded_operation_holds_database_snapshot_through_its_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("guarded-operation.db");
+        let tracker = PipelineTracker::new(&db_path).unwrap();
+        let entry = tracker
+            .add_pipeline_entry("job-1", PipelineStatus::New)
+            .unwrap();
+
+        let guarded = tracker.current_connection().unwrap();
+        let concurrent = Connection::open(&db_path).unwrap();
+        concurrent.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let error = concurrent
+            .pragma_update(None, "user_version", i64::from(CURRENT_SCHEMA_VERSION + 1))
+            .expect_err("a schema writer must not pass an active guarded operation");
+        assert!(matches!(
+            error,
+            rusqlite::Error::SqliteFailure(ref failure, _)
+                if matches!(
+                    failure.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                )
+        ));
+
+        guarded
+            .execute(
+                "UPDATE pipeline SET status = ?1 WHERE id = ?2",
+                params![
+                    serde_json::to_string(&PipelineStatus::Applied).unwrap(),
+                    entry.id
+                ],
+            )
+            .unwrap();
+        guarded.commit().unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        assert_eq!(user_version(&conn), i64::from(CURRENT_SCHEMA_VERSION));
+        let stored_status: String = conn
+            .query_row(
+                "SELECT status FROM pipeline WHERE id = ?1",
+                [&entry.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<PipelineStatus>(&stored_status).unwrap(),
+            PipelineStatus::Applied
+        );
     }
 }

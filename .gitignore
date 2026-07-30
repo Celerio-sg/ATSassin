@@ -4,6 +4,7 @@ __pycache__/
 .atsassin.db
 *.sqlite
 *.db
+*.backup-v*-to-v*-*.sqlite3
 .env
 .env.local
 # Root-anchored (leading /): these are locally-generated runtime artifacts

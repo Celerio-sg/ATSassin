@@ -5,6 +5,7 @@ All notable changes to this project are documented here. Format loosely follows 
 ## [Unreleased]
 
 ### Fixed
+- SQLite schema changes now use ordered forward-only `PRAGMA user_version` migrations in one transaction, with filename-agnostic ignored backups taken only after the migration write lock, explicit outcomes, legacy adoption, repeat-open idempotency, and newer-schema refusal shared by pipeline and feedback entry points; long-lived operations hold a database transaction across their version guard and SQL, failed migrations leave user history untouched, and daemon tests no longer open the user's default database (#181).
 - Every LLM route now crosses the shared egress gate: trusted instructions and labelled untrusted data are boundary-separated, high-confidence nested instructions and marker collisions fail closed, prompt size is bounded by the adjusted model context, and the HTTP client accepts only an opaque validated request (#71).
 - The identity-bearing Scenario 1 UAT profile and current-tree references were replaced with a wholly synthetic senior APAC GTM persona of equivalent parser and workflow test shape; historical reports retain their observations with anonymisation annotations (#146).
 - Deterministic PII coverage now includes representative SG, UK, India, EU, and US phone/address shapes, Unicode profile identity, strong or labelled national IDs/passports/DOBs, and standalone social handles, with false-positive controls; this is explicitly not universal NER (#81).
