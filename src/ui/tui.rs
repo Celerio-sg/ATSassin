@@ -23,7 +23,7 @@ use crate::config::JobPreferences;
 use crate::engine::hardware::HardwareProfile;
 use crate::engine::role_inference::RoleInferenceEngine;
 use crate::engine::router::ModelRouter;
-use crate::models::job::{ActivityEvent, Evaluation, Job, JobRow, PipelineStatus};
+use crate::models::job::{ActivityEvent, Evaluation, JobRow, PipelineStatus};
 use crate::models::profile::UserProfile;
 use crate::models::role::RoleArchetype;
 use crate::pipeline::scraper::Scraper;
@@ -603,26 +603,20 @@ impl TuiDashboard {
                     if summary.url.is_empty() {
                         continue;
                     }
-                    let job = Job {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        title: summary.title.clone(),
-                        company: summary.company.clone(),
-                        location: summary.location.clone(),
-                        remote: false,
-                        job_type: None,
-                        salary_range: None,
-                        description: summary
-                            .description
-                            .clone()
-                            .unwrap_or_else(|| summary.snippet.clone()),
-                        requirements: vec![],
-                        posted_at: summary.posted_at,
-                        source: board.clone(),
-                        url: summary.url.clone(),
-                        applied: false,
-                        scraped_at: chrono::Utc::now(),
-                    };
-                    let _ = tracker.save_job(&job);
+                    match summary.to_job(board.clone(), chrono::Utc::now()) {
+                        Ok(job) => {
+                            if let Err(error) = tracker.save_job(&job) {
+                                let _ = tx.send(TuiEvent::ScanError(format!(
+                                    "{board}: failed to persist job: {error}"
+                                )));
+                            }
+                        }
+                        Err(error) => {
+                            let _ = tx.send(TuiEvent::ScanError(format!(
+                                "{board}: invalid job identity: {error}"
+                            )));
+                        }
+                    }
                 }
                 let _ = tx.send(TuiEvent::ScanBoardDone(board, result.jobs.len()));
             }

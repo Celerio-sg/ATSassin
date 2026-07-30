@@ -754,25 +754,7 @@ impl Cli {
                 if summary.url.is_empty() {
                     continue;
                 }
-                let job = crate::models::job::Job {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    title: summary.title.clone(),
-                    company: summary.company.clone(),
-                    location: summary.location.clone(),
-                    remote: false,
-                    job_type: None,
-                    salary_range: None,
-                    description: summary
-                        .description
-                        .clone()
-                        .unwrap_or_else(|| summary.snippet.clone()),
-                    requirements: vec![],
-                    posted_at: summary.posted_at,
-                    source: board.clone(),
-                    url: summary.url.clone(),
-                    applied: false,
-                    scraped_at: chrono::Utc::now(),
-                };
+                let job = summary.to_job(board.clone(), chrono::Utc::now())?;
 
                 let pref_match = crate::engine::preferences::check(&job, &cfg.preferences);
                 if args.prefs_only && !pref_match.matches {
@@ -790,10 +772,15 @@ impl Cli {
                         pref_match.reasons.join("; ")
                     );
                 }
-                if tracker.save_job(&job).is_ok() {
-                    println!("    id: {}", job.id);
+                match tracker.save_job(&job)? {
+                    crate::pipeline::tracker::JobSaveOutcome::Inserted => {
+                        println!("    id: {}", job.id);
+                        scanned_jobs.push(job);
+                    }
+                    crate::pipeline::tracker::JobSaveOutcome::Updated => {
+                        println!("    existing id: {}", job.id);
+                    }
                 }
-                scanned_jobs.push(job);
             }
         }
 
@@ -945,22 +932,7 @@ impl Cli {
             }
         } else if let Some(file) = &args.file {
             let text = read_text_lossy(file).context("Failed to read job description file")?;
-            let job = crate::models::job::Job {
-                id: uuid::Uuid::new_v4().to_string(),
-                title: "Imported Job".to_string(),
-                company: "Unknown".to_string(),
-                location: "Unknown".to_string(),
-                remote: false,
-                job_type: None,
-                salary_range: None,
-                description: text,
-                requirements: vec![],
-                posted_at: None,
-                source: "file".to_string(),
-                url: String::new(),
-                applied: false,
-                scraped_at: chrono::Utc::now(),
-            };
+            let job = crate::models::job::Job::imported(text, chrono::Utc::now());
             let job_id = job.id.clone();
             tracker.save_job(&job)?;
             println!("Job saved as '{}'. Evaluating...", job_id);
@@ -1010,22 +982,7 @@ impl Cli {
             }
         } else if let Some(file) = &args.file {
             let text = read_text_lossy(file).context("Failed to read job description file")?;
-            let job = crate::models::job::Job {
-                id: uuid::Uuid::new_v4().to_string(),
-                title: "Imported Job".to_string(),
-                company: "Unknown".to_string(),
-                location: "Unknown".to_string(),
-                remote: false,
-                job_type: None,
-                salary_range: None,
-                description: text,
-                requirements: vec![],
-                posted_at: None,
-                source: "file".to_string(),
-                url: String::new(),
-                applied: false,
-                scraped_at: chrono::Utc::now(),
-            };
+            let job = crate::models::job::Job::imported(text, chrono::Utc::now());
             let job_id = job.id.clone();
             tracker.save_job(&job)?;
             println!("Job saved as '{}'.", job_id);

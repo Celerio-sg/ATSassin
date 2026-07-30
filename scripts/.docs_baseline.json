@@ -1,16 +1,16 @@
 {
   "_comment": "Known ADR-002 violations at the v0.1.0-baseline tag, tracked in #144. The gate fails on NEW ones. Regenerate after #144 lands to tighten it.",
   "fabricated_posted_at": [
-    "src/pipeline/scraper.rs:1003",
-    "src/pipeline/scraper.rs:468",
-    "src/pipeline/scraper.rs:872",
-    "src/pipeline/scraper.rs:951",
-    "src/pipeline/social_scraper.rs:275",
-    "src/pipeline/social_scraper.rs:320",
-    "src/pipeline/social_scraper.rs:368",
-    "src/pipeline/social_scraper.rs:420",
-    "src/pipeline/social_scraper.rs:543",
-    "src/pipeline/social_scraper.rs:589",
-    "src/pipeline/social_scraper.rs:641"
+    "src/pipeline/scraper.rs:1044",
+    "src/pipeline/scraper.rs:503",
+    "src/pipeline/scraper.rs:911",
+    "src/pipeline/scraper.rs:991",
+    "src/pipeline/social_scraper.rs:276",
+    "src/pipeline/social_scraper.rs:321",
+    "src/pipeline/social_scraper.rs:369",
+    "src/pipeline/social_scraper.rs:421",
+    "src/pipeline/social_scraper.rs:544",
+    "src/pipeline/social_scraper.rs:590",
+    "src/pipeline/social_scraper.rs:642"
   ]
 }

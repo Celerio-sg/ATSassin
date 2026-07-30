@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+use crate::models::job::{Job, JobIdentity, JobUrlKind};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScrapeResult {
     pub jobs: Vec<JobSummary>,
@@ -20,6 +22,38 @@ pub struct JobSummary {
     pub posted_at: Option<DateTime<Utc>>,
     pub snippet: String,
     pub description: Option<String>,
+    pub url_kind: JobUrlKind,
+}
+
+impl JobSummary {
+    pub fn to_job(&self, source: String, scraped_at: DateTime<Utc>) -> Result<Job> {
+        let identity = match self.url_kind {
+            JobUrlKind::Posting => JobIdentity::posting(&self.url)?,
+            JobUrlKind::SearchPage => {
+                JobIdentity::search_lead(&self.company, &self.title, &self.location)
+            }
+        };
+        Ok(Job {
+            id: identity.id,
+            canonical_url: identity.canonical_url,
+            title: self.title.clone(),
+            company: self.company.clone(),
+            location: self.location.clone(),
+            remote: false,
+            job_type: None,
+            salary_range: None,
+            description: self
+                .description
+                .clone()
+                .unwrap_or_else(|| self.snippet.clone()),
+            requirements: vec![],
+            posted_at: self.posted_at,
+            source,
+            url: self.url.clone(),
+            applied: false,
+            scraped_at,
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -321,6 +355,7 @@ impl Scraper {
                     posted_at: Some(posted_at),
                     snippet: "LinkedIn job posting".to_string(),
                     description: None,
+                    url_kind: JobUrlKind::Posting,
                 });
             }
         }
@@ -468,6 +503,7 @@ impl Scraper {
                 posted_at: Some(Utc::now()),
                 snippet: "SEEK job posting".to_string(),
                 description,
+                url_kind: JobUrlKind::Posting,
             });
         }
 
@@ -566,6 +602,7 @@ impl Scraper {
                 posted_at: None,
                 snippet: "Greenhouse job posting".to_string(),
                 description,
+                url_kind: JobUrlKind::Posting,
             });
             if out.len() >= limit {
                 break;
@@ -635,6 +672,7 @@ impl Scraper {
                 posted_at: None,
                 snippet: "Lever job posting".to_string(),
                 description,
+                url_kind: JobUrlKind::Posting,
             });
             if out.len() >= limit {
                 break;
@@ -714,6 +752,7 @@ impl Scraper {
                 posted_at: None,
                 snippet: "Ashby job posting".to_string(),
                 description,
+                url_kind: JobUrlKind::Posting,
             });
             if out.len() >= limit {
                 break;
@@ -872,6 +911,7 @@ impl Scraper {
                             posted_at: Some(Utc::now()),
                             snippet: String::new(),
                             description: None,
+                            url_kind: JobUrlKind::SearchPage,
                         });
                     }
                 }
@@ -951,6 +991,7 @@ impl Scraper {
                         posted_at: Some(Utc::now()),
                         snippet: "Scraped via Chrome DevTools Browser MCP".to_string(),
                         description: None,
+                        url_kind: JobUrlKind::SearchPage,
                     })
                     .collect();
                 if !jobs.is_empty() {
@@ -1003,6 +1044,7 @@ impl Scraper {
                         posted_at: Some(Utc::now()),
                         snippet: "Headless-browser job posting".to_string(),
                         description: None,
+                        url_kind: JobUrlKind::SearchPage,
                     });
                 }
             }

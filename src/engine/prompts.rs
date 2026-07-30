@@ -353,6 +353,7 @@ mod tests {
     fn job_dummy() -> Job {
         Job {
             id: "1".to_string(),
+            canonical_url: None,
             title: "Engineer".to_string(),
             company: "Acme".to_string(),
             location: "Remote".to_string(),

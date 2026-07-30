@@ -8,7 +8,7 @@ Each decision states the date, the status, and the reasoning. Superseding a deci
 
 ## ADR-001 — Job identity is content-addressed, never random
 
-**Date:** 2026-07-29 · **Status:** Accepted · **Supersedes:** the implicit v4-UUID convention
+**Date:** 2026-07-29 · **Status:** Implemented 2026-07-30 (#142) · **Supersedes:** the implicit v4-UUID convention
 
 Job primary keys are derived deterministically from the posting's canonical identity:
 
@@ -16,11 +16,11 @@ Job primary keys are derived deterministically from the posting's canonical iden
 2. `id = sha256(canonical_url)` truncated to 128 bits, hex-encoded.
 3. Where the URL is a search page rather than a posting (some social sources), fall back to `sha256(company + "\x00" + title + "\x00" + normalised_location)`.
 
-The `jobs` table gains `UNIQUE(canonical_url)` and writes become `INSERT … ON CONFLICT DO UPDATE`.
+File imports use a separate content hash because they have neither a posting URL nor a trustworthy listing tuple. Extractors explicitly label posting URLs versus search-page leads; runtime persistence never guesses from URL shape. The `jobs` table has a unique partial index over non-null `canonical_url`, and writes use `INSERT … ON CONFLICT DO UPDATE` while reporting `Inserted` versus `Updated`.
 
 **Why:** v4 UUIDs (`cli.rs:758`, `tui.rs:607`, `daemon.rs:114`) are random and unrelated to content, so the same posting scanned twice becomes two rows, the evaluation cache keyed on `job_id` can never hit, and the daemon re-evaluates every job on every tick at full LLM cost forever. This made continuous market-watch unshippable. Every downstream layer — dedup, calibration, allocation — requires stable identity.
 
-**Consequence:** re-scanning becomes idempotent and cheap. This is a prerequisite for everything else in the current architecture.
+**Consequence:** re-scanning is idempotent and cheap. Schema v3 re-keyed legacy rows transactionally and retargeted evaluation, pipeline, application, and feedback history before collapsing duplicates. The daemon only evaluates `Inserted` jobs, so a second identical tick performs zero evaluation work. This prerequisite for the downstream architecture is complete.
 
 ---
 

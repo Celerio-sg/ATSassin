@@ -51,6 +51,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Text processing
 tokenizers = "0.23"
 regex = "1.11"
+sha2 = "0.10"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 lazy_static = "1.5"
 
