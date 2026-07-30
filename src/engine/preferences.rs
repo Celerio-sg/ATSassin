@@ -239,6 +239,7 @@ mod tests {
     ) -> Job {
         Job {
             id: "1".to_string(),
+            canonical_url: None,
             title: title.to_string(),
             company: "Acme".to_string(),
             location: location.to_string(),

@@ -213,7 +213,7 @@ This is now a required test case: **an evaluation must never list a structural f
 
 ### Defects reproduced live
 
-**P0-2 duplication, in the user-facing slate.** Of the top 20 recommendations, **8 slots were duplicates**: Airtable "Professional Services – West" appeared 3×, "– East" 3×, amplemarket "Senior Revenue Operations Manager" 2×, Airtable "Community (Contract)" 2×. Each duplicate carries a distinct random UUID, so the tool cannot tell them apart. This is ADR-001 observed end-to-end: 40% of the user's decision surface was noise.
+**Historical P0-2 duplication, fixed by #142.** Of the top 20 recommendations in the 2026-07-29 trial, **8 slots were duplicates**: Airtable "Professional Services – West" appeared 3×, "– East" 3×, amplemarket "Senior Revenue Operations Manager" 2×, Airtable "Community (Contract)" 2×. Each duplicate carried a distinct random UUID, so the tool could not tell them apart. This remains ADR-001's end-to-end baseline observation; deterministic identity, canonical upsert, legacy re-key preservation, and zero-work second daemon ingestion are now covered by automated tests.
 
 **Tier collapse.** Startup logged `Synced tier models to default: llama-3.3-70b-versatile`, confirming `config.rs:422` collapses light/balanced/full to one model regardless of `--preset`.
 

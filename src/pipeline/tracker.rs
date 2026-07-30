@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Transaction, TransactionBehavior, MAIN_DB};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::OpenOptions;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -10,8 +10,8 @@ use tracing::{debug, warn};
 
 use crate::engine::compute_broker::{ComputeBroker, ProviderQuota};
 use crate::models::job::{
-    ActivityEvent, DimensionScore, Evaluation, Job, JobRow, PipelineEntry, PipelineStatus,
-    Recommendation,
+    canonicalize_job_url, normalize_identity_text, ActivityEvent, DimensionScore, Evaluation, Job,
+    JobIdentity, JobRow, PipelineEntry, PipelineStatus, Recommendation,
 };
 use crate::models::profile::UserProfile;
 use crate::models::role::{
@@ -19,7 +19,7 @@ use crate::models::role::{
 };
 use crate::pipeline::board_discovery::{AtsType, DiscoveredBoard};
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 const INITIAL_SCHEMA_SQL: &str = r#"
     CREATE TABLE IF NOT EXISTS profiles (
@@ -167,6 +167,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "feedback_schema",
         apply: migration_2_feedback_schema,
     },
+    Migration {
+        version: 3,
+        name: "canonical_job_identity",
+        apply: migration_3_canonical_job_identity,
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,12 +189,200 @@ pub enum MigrationOutcome {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobSaveOutcome {
+    Inserted,
+    Updated,
+}
+
 fn migration_1_initial_pipeline_schema(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
     transaction.execute_batch(INITIAL_SCHEMA_SQL)
 }
 
 fn migration_2_feedback_schema(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
     transaction.execute_batch(FEEDBACK_SCHEMA_SQL)
+}
+
+#[derive(Debug, Clone)]
+struct LegacyJob {
+    old_id: String,
+    title: String,
+    company: String,
+    location: String,
+    remote: bool,
+    job_type: Option<String>,
+    salary_range: Option<String>,
+    description: String,
+    requirements: Option<String>,
+    posted_at: Option<String>,
+    source: String,
+    url: String,
+    applied: bool,
+    scraped_at: String,
+}
+
+fn legacy_tuple_key(job: &LegacyJob) -> String {
+    [
+        normalize_identity_text(&job.company),
+        normalize_identity_text(&job.title),
+        normalize_identity_text(&job.location),
+    ]
+    .join("\0")
+}
+
+fn migration_3_canonical_job_identity(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
+    let legacy_jobs = {
+        let mut statement = transaction.prepare(
+            "SELECT id, title, company, location, remote, job_type, salary_range, description,
+                    requirements, posted_at, source, url, applied, scraped_at
+             FROM jobs",
+        )?;
+        let jobs = statement
+            .query_map([], |row| {
+                Ok(LegacyJob {
+                    old_id: row.get(0)?,
+                    title: row.get(1)?,
+                    company: row.get(2)?,
+                    location: row.get(3)?,
+                    remote: row.get(4)?,
+                    job_type: row.get(5)?,
+                    salary_range: row.get(6)?,
+                    description: row.get(7)?,
+                    requirements: row.get(8)?,
+                    posted_at: row.get(9)?,
+                    source: row.get(10)?,
+                    url: row.get(11)?,
+                    applied: row.get(12)?,
+                    scraped_at: row.get(13)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        jobs
+    };
+
+    let mut url_tuples: HashMap<String, HashSet<String>> = HashMap::new();
+    for job in &legacy_jobs {
+        if !job.url.trim().is_empty() {
+            if let Ok(canonical_url) = canonicalize_job_url(&job.url) {
+                url_tuples
+                    .entry(canonical_url)
+                    .or_default()
+                    .insert(legacy_tuple_key(job));
+            }
+        }
+    }
+
+    transaction.execute_batch(
+        "CREATE TEMP TABLE canonical_job_id_map (
+             old_id TEXT PRIMARY KEY,
+             new_id TEXT NOT NULL
+         );
+         CREATE TABLE jobs_v3 (
+             id TEXT PRIMARY KEY,
+             canonical_url TEXT,
+             title TEXT NOT NULL,
+             company TEXT NOT NULL,
+             location TEXT NOT NULL,
+             remote INTEGER,
+             job_type TEXT,
+             salary_range TEXT,
+             description TEXT NOT NULL,
+             requirements TEXT,
+             posted_at TEXT,
+             source TEXT NOT NULL,
+             url TEXT NOT NULL,
+             applied INTEGER DEFAULT 0,
+             scraped_at TEXT NOT NULL
+         );",
+    )?;
+
+    let mut merged: HashMap<String, (LegacyJob, Option<String>)> = HashMap::new();
+    for job in legacy_jobs {
+        let identity = if job.url.trim().is_empty() {
+            JobIdentity::imported(&job.description)
+        } else if let Ok(canonical_url) = canonicalize_job_url(&job.url) {
+            if url_tuples
+                .get(&canonical_url)
+                .is_some_and(|tuples| tuples.len() == 1)
+            {
+                JobIdentity::posting(&canonical_url).map_err(|_| rusqlite::Error::InvalidQuery)?
+            } else {
+                JobIdentity::search_lead(&job.company, &job.title, &job.location)
+            }
+        } else {
+            JobIdentity::search_lead(&job.company, &job.title, &job.location)
+        };
+
+        transaction.execute(
+            "INSERT INTO canonical_job_id_map (old_id, new_id) VALUES (?1, ?2)",
+            params![job.old_id, identity.id],
+        )?;
+
+        match merged.entry(identity.id) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert((job, identity.canonical_url));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let (survivor, canonical_url) = entry.get_mut();
+                let applied = survivor.applied || job.applied;
+                if (job.scraped_at.as_str(), job.old_id.as_str())
+                    > (survivor.scraped_at.as_str(), survivor.old_id.as_str())
+                {
+                    *survivor = job;
+                }
+                survivor.applied = applied;
+                *canonical_url = identity.canonical_url;
+            }
+        }
+    }
+
+    for (id, (job, canonical_url)) in merged {
+        transaction.execute(
+            "INSERT INTO jobs_v3
+             (id, canonical_url, title, company, location, remote, job_type, salary_range,
+              description, requirements, posted_at, source, url, applied, scraped_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                id,
+                canonical_url,
+                job.title,
+                job.company,
+                job.location,
+                job.remote,
+                job.job_type,
+                job.salary_range,
+                job.description,
+                job.requirements,
+                job.posted_at,
+                job.source,
+                job.url,
+                job.applied,
+                job.scraped_at,
+            ],
+        )?;
+    }
+
+    for table in ["evaluations", "pipeline", "applications", "feedback"] {
+        transaction.execute(
+            &format!(
+                "UPDATE {table}
+                 SET job_id = (
+                     SELECT new_id FROM canonical_job_id_map WHERE old_id = {table}.job_id
+                 )
+                 WHERE job_id IN (SELECT old_id FROM canonical_job_id_map)"
+            ),
+            [],
+        )?;
+    }
+
+    transaction.execute_batch(
+        "DROP TABLE jobs;
+         ALTER TABLE jobs_v3 RENAME TO jobs;
+         CREATE INDEX idx_jobs_source ON jobs(source);
+         CREATE UNIQUE INDEX idx_jobs_canonical_url
+             ON jobs(canonical_url) WHERE canonical_url IS NOT NULL;
+         DROP TABLE canonical_job_id_map;",
+    )
 }
 
 fn migrate_database(
@@ -516,13 +709,55 @@ impl PipelineTracker {
         Ok(())
     }
 
-    pub fn save_job(&self, job: &Job) -> Result<()> {
+    pub fn save_job(&self, job: &Job) -> Result<JobSaveOutcome> {
+        let expected_identity = match &job.canonical_url {
+            Some(canonical_url) => {
+                let identity = JobIdentity::posting(&job.url)?;
+                anyhow::ensure!(
+                    identity.canonical_url.as_deref() == Some(canonical_url.as_str()),
+                    "Job canonical URL does not match its source URL"
+                );
+                identity
+            }
+            None if job.source == "file" && job.url.is_empty() => {
+                JobIdentity::imported(&job.description)
+            }
+            None => JobIdentity::search_lead(&job.company, &job.title, &job.location),
+        };
+        anyhow::ensure!(
+            job.id == expected_identity.id,
+            "Job ID does not match its canonical content identity"
+        );
+
         let conn = self.current_connection()?;
+        let existed = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE id = ?1)",
+            [&job.id],
+            |row| row.get::<_, bool>(0),
+        )?;
         conn.execute(
-            "INSERT OR REPLACE INTO jobs (id, title, company, location, remote, job_type, salary_range, description, requirements, posted_at, source, url, applied, scraped_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            "INSERT INTO jobs
+             (id, canonical_url, title, company, location, remote, job_type, salary_range,
+              description, requirements, posted_at, source, url, applied, scraped_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             ON CONFLICT(id) DO UPDATE SET
+                 canonical_url = excluded.canonical_url,
+                 title = excluded.title,
+                 company = excluded.company,
+                 location = excluded.location,
+                 remote = excluded.remote,
+                 job_type = excluded.job_type,
+                 salary_range = excluded.salary_range,
+                 description = excluded.description,
+                 requirements = excluded.requirements,
+                 posted_at = excluded.posted_at,
+                 source = excluded.source,
+                 url = excluded.url,
+                 applied = jobs.applied OR excluded.applied,
+                 scraped_at = excluded.scraped_at",
             params![
                 job.id,
+                job.canonical_url,
                 job.title,
                 job.company,
                 job.location,
@@ -539,40 +774,47 @@ impl PipelineTracker {
             ],
         )?;
         conn.commit()?;
-        Ok(())
+        Ok(if existed {
+            JobSaveOutcome::Updated
+        } else {
+            JobSaveOutcome::Inserted
+        })
     }
 
     pub fn get_job(&self, job_id: &str) -> Result<Option<Job>> {
         let conn = self.current_connection()?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, company, location, remote, job_type, salary_range, description, requirements, posted_at, source, url, applied, scraped_at FROM jobs WHERE id = ?1",
+            "SELECT id, canonical_url, title, company, location, remote, job_type, salary_range,
+                    description, requirements, posted_at, source, url, applied, scraped_at
+             FROM jobs WHERE id = ?1",
         )?;
         let mut rows = stmt.query([job_id])?;
         if let Some(row) = rows.next()? {
-            let requirements_str: String = row.get(8)?;
+            let requirements_str: String = row.get(9)?;
             let requirements: Vec<String> =
                 serde_json::from_str(&requirements_str).unwrap_or_default();
-            let posted_at = row.get::<_, String>(9).ok().and_then(|s| {
+            let posted_at = row.get::<_, String>(10).ok().and_then(|s| {
                 DateTime::parse_from_rfc3339(&s)
                     .ok()
                     .map(|dt| dt.with_timezone(&Utc))
             });
             Ok(Some(Job {
                 id: row.get(0)?,
-                title: row.get(1)?,
-                company: row.get(2)?,
-                location: row.get(3)?,
-                remote: row.get(4)?,
-                job_type: row.get(5)?,
-                salary_range: row.get(6)?,
-                description: row.get(7)?,
+                canonical_url: row.get(1)?,
+                title: row.get(2)?,
+                company: row.get(3)?,
+                location: row.get(4)?,
+                remote: row.get(5)?,
+                job_type: row.get(6)?,
+                salary_range: row.get(7)?,
+                description: row.get(8)?,
                 requirements,
                 posted_at,
-                source: row.get(10)?,
-                url: row.get(11)?,
-                applied: row.get(12)?,
+                source: row.get(11)?,
+                url: row.get(12)?,
+                applied: row.get(13)?,
                 scraped_at: row
-                    .get::<_, String>(13)
+                    .get::<_, String>(14)
                     .unwrap_or_else(|_| Utc::now().to_rfc3339())
                     .parse::<DateTime<Utc>>()
                     .unwrap_or_else(|_| Utc::now()),
@@ -1397,6 +1639,244 @@ mod tests {
                 .unwrap();
             assert_eq!(exists, 1, "migration did not create {table}");
         }
+    }
+
+    #[test]
+    fn repeat_save_updates_one_canonical_row_and_preserves_applied() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("repeat-job.db");
+        let tracker = PipelineTracker::new(&db_path).unwrap();
+        let identity =
+            JobIdentity::posting("https://EXAMPLE.com/jobs/42/?utm_source=first").unwrap();
+        let mut job = Job {
+            id: identity.id,
+            canonical_url: identity.canonical_url,
+            title: "Engineer".to_string(),
+            company: "Acme".to_string(),
+            location: "Singapore".to_string(),
+            remote: false,
+            job_type: None,
+            salary_range: None,
+            description: "First description".to_string(),
+            requirements: vec![],
+            posted_at: None,
+            source: "test".to_string(),
+            url: "https://EXAMPLE.com/jobs/42/?utm_source=first".to_string(),
+            applied: true,
+            scraped_at: Utc::now(),
+        };
+
+        assert_eq!(tracker.save_job(&job).unwrap(), JobSaveOutcome::Inserted);
+        tracker
+            .save_evaluation(&Evaluation {
+                id: "evaluation-42".to_string(),
+                job_id: job.id.clone(),
+                overall_score: 0.8,
+                overall_grade: "B+".to_string(),
+                dimensions: vec![],
+                match_summary: "Cached evaluation".to_string(),
+                strengths: vec![],
+                gaps: vec![],
+                red_flags: vec![],
+                recommendation: Recommendation::Apply,
+                model_used: "test-model".to_string(),
+                evaluated_at: Utc::now(),
+            })
+            .unwrap();
+        job.url = "https://example.com/jobs/42".to_string();
+        job.description = "Refreshed description".to_string();
+        job.applied = false;
+        assert_eq!(tracker.save_job(&job).unwrap(), JobSaveOutcome::Updated);
+
+        let conn = Connection::open(&db_path).unwrap();
+        assert_eq!(row_count(&conn, "jobs"), 1);
+        let stored = tracker.get_job(&job.id).unwrap().unwrap();
+        assert_eq!(stored.description, "Refreshed description");
+        assert!(stored.applied);
+        assert_eq!(
+            tracker
+                .get_latest_evaluation(&job.id)
+                .unwrap()
+                .unwrap()
+                .match_summary,
+            "Cached evaluation"
+        );
+    }
+
+    #[test]
+    fn save_rejects_noncanonical_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let tracker = PipelineTracker::new(&temp.path().join("invalid-job.db")).unwrap();
+        let job = Job {
+            id: "random-id".to_string(),
+            canonical_url: Some("https://example.com/jobs/42".to_string()),
+            title: "Engineer".to_string(),
+            company: "Acme".to_string(),
+            location: "Singapore".to_string(),
+            remote: false,
+            job_type: None,
+            salary_range: None,
+            description: "Description".to_string(),
+            requirements: vec![],
+            posted_at: None,
+            source: "test".to_string(),
+            url: "https://example.com/jobs/42".to_string(),
+            applied: false,
+            scraped_at: Utc::now(),
+        };
+
+        let error = tracker.save_job(&job).unwrap_err();
+        assert!(error.to_string().contains("canonical content identity"));
+    }
+
+    #[test]
+    fn canonical_identity_migration_collapses_duplicates_and_retargets_all_children() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("canonical-v2.db");
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(INITIAL_SCHEMA_SQL).unwrap();
+            conn.execute_batch(FEEDBACK_SCHEMA_SQL).unwrap();
+            let jobs = [
+                (
+                    "old-a",
+                    "Engineer",
+                    "Acme",
+                    "Singapore",
+                    "Old description",
+                    "https://example.com/jobs/42/?utm_source=old",
+                    true,
+                    "2026-07-29T00:00:00Z",
+                ),
+                (
+                    "old-b",
+                    "Engineer",
+                    "Acme",
+                    "Singapore",
+                    "New description",
+                    "https://EXAMPLE.com/jobs/42",
+                    false,
+                    "2026-07-30T00:00:00Z",
+                ),
+                (
+                    "lead-a",
+                    "Engineer",
+                    "Acme",
+                    "Singapore",
+                    "Lead A",
+                    "https://example.com/search?q=engineer",
+                    false,
+                    "2026-07-30T00:00:01Z",
+                ),
+                (
+                    "lead-b",
+                    "Designer",
+                    "Beta",
+                    "London",
+                    "Lead B",
+                    "https://example.com/search?q=engineer",
+                    false,
+                    "2026-07-30T00:00:02Z",
+                ),
+            ];
+            for (id, title, company, location, description, url, applied, scraped_at) in jobs {
+                conn.execute(
+                    "INSERT INTO jobs
+                     (id, title, company, location, remote, description, requirements, source, url,
+                      applied, scraped_at)
+                     VALUES (?1, ?2, ?3, ?4, 0, ?5, '[]', 'legacy', ?6, ?7, ?8)",
+                    params![
+                        id,
+                        title,
+                        company,
+                        location,
+                        description,
+                        url,
+                        applied,
+                        scraped_at
+                    ],
+                )
+                .unwrap();
+            }
+            for old_id in ["old-a", "old-b"] {
+                conn.execute(
+                    "INSERT INTO evaluations
+                     (id, job_id, overall_score, overall_grade, recommendation, model_used,
+                      evaluated_at)
+                     VALUES (?1, ?2, 0.8, 'B+', 'apply', 'model', '2026-07-30T00:00:00Z')",
+                    params![format!("evaluation-{old_id}"), old_id],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO pipeline
+                     (id, job_id, status, created_at, updated_at)
+                     VALUES (?1, ?2, '\"new\"', '2026-07-30T00:00:00Z',
+                             '2026-07-30T00:00:00Z')",
+                    params![format!("pipeline-{old_id}"), old_id],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO applications
+                     (id, job_id, resume_text, cover_letter_text, model_used, generated_at)
+                     VALUES (?1, ?2, 'resume', 'cover', 'model', '2026-07-30T00:00:00Z')",
+                    params![format!("application-{old_id}"), old_id],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO feedback
+                     (job_id, task_type, action, recommendation_text, confidence_before,
+                      confidence_after)
+                     VALUES (?1, 'scoring', 'accepted', 'keep', 0.5, 0.8)",
+                    [old_id],
+                )
+                .unwrap();
+            }
+            conn.pragma_update(None, "user_version", 2).unwrap();
+        }
+
+        let tracker = PipelineTracker::new(&db_path).unwrap();
+        let canonical =
+            JobIdentity::posting("https://example.com/jobs/42?utm_medium=ignored").unwrap();
+        let stored = tracker.get_job(&canonical.id).unwrap().unwrap();
+        assert_eq!(stored.description, "New description");
+        assert!(stored.applied);
+
+        let conn = Connection::open(&db_path).unwrap();
+        assert_eq!(row_count(&conn, "jobs"), 3);
+        for table in ["evaluations", "pipeline", "applications", "feedback"] {
+            assert_eq!(
+                row_count(&conn, table),
+                2,
+                "{table} rows were not preserved"
+            );
+            let distinct_targets: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(DISTINCT job_id) FROM {table}"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(distinct_targets, 1, "{table} was not retargeted");
+            let target: String = conn
+                .query_row(&format!("SELECT job_id FROM {table} LIMIT 1"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(target, canonical.id);
+        }
+
+        let lead_a = JobIdentity::search_lead("Acme", "Engineer", "Singapore");
+        let lead_b = JobIdentity::search_lead("Beta", "Designer", "London");
+        assert!(tracker.get_job(&lead_a.id).unwrap().is_some());
+        assert!(tracker.get_job(&lead_b.id).unwrap().is_some());
+        let null_canonical_urls: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM jobs WHERE canonical_url IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(null_canonical_urls, 2);
     }
 
     #[test]

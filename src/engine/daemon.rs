@@ -110,27 +110,13 @@ async fn run_tick(
                     if summary.url.is_empty() {
                         continue;
                     }
-                    let job = crate::models::job::Job {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        title: summary.title.clone(),
-                        company: summary.company.clone(),
-                        location: summary.location.clone(),
-                        remote: false,
-                        job_type: None,
-                        salary_range: None,
-                        description: summary
-                            .description
-                            .clone()
-                            .unwrap_or_else(|| summary.snippet.clone()),
-                        requirements: vec![],
-                        posted_at: summary.posted_at,
-                        source: board.clone(),
-                        url: summary.url.clone(),
-                        applied: false,
-                        scraped_at: chrono::Utc::now(),
-                    };
-                    if tracker.save_job(&job).is_ok() {
-                        new_jobs.push(job);
+                    match persist_scanned_job(&tracker, &summary, board.clone(), chrono::Utc::now())
+                    {
+                        Ok(Some(job)) => new_jobs.push(job),
+                        Ok(None) => {}
+                        Err(error) => {
+                            warn!("[{}] Failed to persist job: {}", board, error);
+                        }
                     }
                 }
             }
@@ -148,6 +134,19 @@ async fn run_tick(
     sync_imap_outcomes(cfg).await;
 
     Ok(())
+}
+
+fn persist_scanned_job(
+    tracker: &PipelineTracker,
+    summary: &crate::pipeline::scraper::JobSummary,
+    source: String,
+    scraped_at: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<crate::models::job::Job>> {
+    let job = summary.to_job(source, scraped_at)?;
+    match tracker.save_job(&job)? {
+        crate::pipeline::tracker::JobSaveOutcome::Inserted => Ok(Some(job)),
+        crate::pipeline::tracker::JobSaveOutcome::Updated => Ok(None),
+    }
 }
 
 /// Evaluate newly-scanned jobs against the user's profile, rank them, and
@@ -339,6 +338,34 @@ async fn sync_imap_outcomes(cfg: &AppConfig) {
 mod tests {
     use super::*;
     use crate::config::AppConfig;
+    use crate::models::job::JobUrlKind;
+    use crate::pipeline::scraper::JobSummary;
+
+    #[test]
+    fn second_daemon_ingestion_yields_no_job_for_evaluation() {
+        let temp = tempfile::tempdir().unwrap();
+        let tracker = PipelineTracker::new(&temp.path().join("daemon-ingestion.db")).unwrap();
+        let summary = JobSummary {
+            title: "Staff Engineer".to_string(),
+            company: "Acme".to_string(),
+            location: "Singapore".to_string(),
+            url: "https://example.com/jobs/42?utm_source=daemon".to_string(),
+            posted_at: None,
+            snippet: "Role".to_string(),
+            description: Some("Build reliable systems".to_string()),
+            url_kind: JobUrlKind::Posting,
+        };
+
+        let first = persist_scanned_job(&tracker, &summary, "test".to_string(), chrono::Utc::now())
+            .unwrap();
+        let second =
+            persist_scanned_job(&tracker, &summary, "test".to_string(), chrono::Utc::now())
+                .unwrap();
+
+        assert!(first.is_some());
+        assert!(second.is_none());
+        assert_eq!(tracker.list_job_rows(10).unwrap().len(), 1);
+    }
 
     #[tokio::test]
     async fn daemon_tick_scans_all_boards() {

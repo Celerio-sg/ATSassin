@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use super::scraper::JobSummary;
+use crate::models::job::JobUrlKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialPost {
@@ -666,6 +667,7 @@ impl SocialScraper {
                     lead.snippet, lead.source_platform, lead.author
                 ),
                 description: None,
+                url_kind: JobUrlKind::SearchPage,
             })
             .collect()
     }

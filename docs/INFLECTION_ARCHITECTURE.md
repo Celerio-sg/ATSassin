@@ -38,6 +38,8 @@ Given the maintainer and first-trial persona are Singapore-based, the default co
 
 ## P0-2 — Job identity is random, so nothing downstream can be trusted
 
+> **Resolved 2026-07-30 (#142):** all live scan paths now derive content-addressed IDs from explicitly classified posting URLs or search-page lead tuples. Schema v3 re-keyed legacy jobs and retargeted all dependent history transactionally; canonical upserts distinguish new rows from refreshes, and a second daemon ingestion schedules zero evaluation work. The analysis below is retained as the historical finding that motivated the fix.
+
 Every live scan path assigns a fresh v4 UUID as the job's primary key:
 
 | Path | Line |
