@@ -35,7 +35,7 @@ reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "block
 # HTML parsing
 scraper = "0.27"
 # Headless browser fallback
-fantoccini = "0.19"
+fantoccini = "0.22"
 # PDF
 printpdf = { version = "0.7", features = ["image"] }
 
