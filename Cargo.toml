@@ -40,7 +40,7 @@ fantoccini = "0.19"
 printpdf = { version = "0.7", features = ["image"] }
 
 # TUI
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 sysinfo = "0.39"
 
