@@ -78,7 +78,7 @@ csv = "1.3"
 # Outcome ingestion (Phase 0)
 imap = "2.4"
 mailparse = "0.14"
-keyring = "2.3"
+keyring = "4.1"
 native-tls = "0.2"
 
 # Telemetry compression (Phase 2)
